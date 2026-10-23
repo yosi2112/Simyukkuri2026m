@@ -1,0 +1,690 @@
+package org.simyukkuri.field.impl;
+
+import java.awt.BasicStroke;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Graphics2D;
+import java.awt.GridLayout;
+import java.awt.Stroke;
+import java.awt.TexturePaint;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
+import java.awt.image.ImageObserver;
+import java.beans.Transient;
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import org.simyukkuri.draw.Point4y;
+import org.simyukkuri.draw.Translate;
+import org.simyukkuri.engine.ModLoader;
+import org.simyukkuri.entity.core.Entity;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.entity.core.world.bodylinked.Stalk;
+import org.simyukkuri.entity.core.world.item.Food;
+import org.simyukkuri.enums.Numbering;
+import org.simyukkuri.field.FieldShape;
+import org.simyukkuri.system.ItemMenu.ShapeMenu;
+import org.simyukkuri.system.ItemMenu.ShapeMenuTarget;
+import org.simyukkuri.system.WorldState;
+import org.simyukkuri.util.GameText;
+import org.simyukkuri.util.GameView;
+import org.simyukkuri.util.GameWorld;
+
+/**
+ * ベルコン
+ * <br>
+ * これはほかのアイテムと違い、ObjEXを継承していないので注意。
+ */
+public class Beltconveyor extends FieldShape {
+
+	private static final long serialVersionUID = -4483279905064301375L;
+
+	/** セットアップメニューの項目 */
+	private static enum SetupMenu {
+		DIRECT(GameText.read("item_direction")),
+		SPEED(GameText.read("item_speed")),
+
+		NORMAL_BABY(""), NORMAL_CHILD(""), NORMAL_ADULT(""),
+
+		PREDATOR_BABY(""), PREDATOR_CHILD(""), PREDATOR_ADULT(""),
+
+		RARE_BABY(""), RARE_CHILD(""), RARE_ADULT(""),
+
+		IDIOT_BABY(""), IDIOT_CHILD(""), IDIOT_ADULT(""),
+
+		HYBRID_BABY(""), HYBRID_CHILD(""), HYBRID_ADULT(""),
+
+		SHIT(GameText.read("command_status_unun")),
+		VOMIT(GameText.read("game_toan")),
+
+		FOOD(GameText.read("command_status_food")),
+		STALK(GameText.read("item_stalk")),
+		;
+
+		private final String caption;
+
+		private SetupMenu(String cap) {
+			this.caption = cap;
+		}
+
+		/** メニュー項目の表示名を返す。 */
+		@SuppressWarnings("unused")
+		public String getCaption() {
+			return caption;
+		}
+
+		/** enum 名の文字列表現を返す。 */
+		@Override
+		public String toString() {
+			return this.caption;
+		}
+	}
+
+	/** セットアップメニューのボタンの列挙 */
+	private static enum SetupButton {
+		NORMAL(GameText.read("draw_normalsp"), SetupMenu.NORMAL_BABY, SetupMenu.NORMAL_CHILD,
+				SetupMenu.NORMAL_ADULT),
+		PREDATOR(GameText.read("draw_predsp"), SetupMenu.PREDATOR_BABY, SetupMenu.PREDATOR_CHILD,
+				SetupMenu.PREDATOR_ADULT),
+		RARE(GameText.read("draw_raresp"), SetupMenu.RARE_BABY, SetupMenu.RARE_CHILD,
+				SetupMenu.RARE_ADULT),
+		IDIOT(GameText.read("item_tarinai"), SetupMenu.IDIOT_BABY, SetupMenu.IDIOT_CHILD,
+				SetupMenu.IDIOT_ADULT),
+		HYBRID(GameText.read("enums_hybrid"), SetupMenu.HYBRID_BABY, SetupMenu.HYBRID_CHILD,
+				SetupMenu.HYBRID_ADULT),
+				;
+
+		private final String caption;
+		private final SetupMenu[] check;
+
+		/** セットアップ用ボタン */
+		private SetupButton(String cap, SetupMenu chk1, SetupMenu chk2, SetupMenu chk3) {
+			this.caption = cap;
+			this.check = new SetupMenu[3];
+			this.check[0] = chk1;
+			this.check[1] = chk2;
+			this.check[2] = chk3;
+		}
+
+		/** ボタンの表示名を返す。 */
+		@SuppressWarnings("unused")
+		public String getCaption() {
+			return caption;
+		}
+
+		/** 対応するメニュー配列を返す。 */
+		@SuppressWarnings("unused")
+		public SetupMenu[] getCheck() {
+			return check;
+		}
+
+		/** enum 名の文字列表現を返す。 */
+		@Override
+		public String toString() {
+			return this.caption;
+		}
+	}
+
+	/** 方向のコンボボックスの定義 */
+	private static enum DirectCombo {
+		RIGHT(GameText.read("right"), 0),
+		UP(GameText.read("inside"), 1),
+		LEFT(GameText.read("left"), 2),
+		BOTTOM(GameText.read("outside"), 3),
+		;
+
+		private final String caption;
+		private final int direct;
+
+		private DirectCombo(String cap, int dir) {
+			this.caption = cap;
+			this.direct = dir;
+		}
+
+		/** コンボボックスの表示名を返す。 */
+		@SuppressWarnings("unused")
+		public String getCaption() {
+			return caption;
+		}
+
+		/** ベルトコンベアの方向値を返す。 */
+		public int getDirect() {
+			return direct;
+		}
+
+		/** enum 名の文字列表現を返す。 */
+		@Override
+		public String toString() {
+			return this.caption;
+		}
+	}
+
+	/** スピードのコンボボックスの定義 */
+	private static enum SpeedCombo {
+		SLOW(GameText.read("item_speedslow"), 1),
+		MIDDLE(GameText.read("item_speednorm"), 2),
+		HIGH(GameText.read("item_speedfast"), 4),
+		;
+
+		private final String caption;
+		private final int speed;
+
+		private SpeedCombo(String cap, int spd) {
+			this.caption = cap;
+			this.speed = spd;
+		}
+
+		/** コンボボックスの表示名を返す。 */
+		@SuppressWarnings("unused")
+		public String getCaption() {
+			return caption;
+		}
+
+		/** ベルトコンベアの速度値を返す。 */
+		public int getSpeed() {
+			return speed;
+		}
+
+		/** enum 名の文字列表現を返す。 */
+		@Override
+		public String toString() {
+			return this.caption;
+		}
+	}
+
+	/** ストローク定義 */
+	public static final Stroke BELTCONVEYOR_STROKE = new BasicStroke(2.0f);
+	/** 色定義 */
+	public static final Color BELTCONVEYOR_COLOR = Color.BLACK;
+	/** 最小サイズ */
+	private static final int MIN_SIZE = 8;
+
+	private static transient BufferedImage[] images = new BufferedImage[4];
+	private static transient TexturePaint[] texture = new TexturePaint[4];
+
+	private boolean[][] setting = new boolean[SetupMenu.values().length][3];
+	private DirectCombo direction;
+	private SpeedCombo beltSpeed;
+
+	private static JComboBox<DirectCombo> dirCombo;
+	private static JComboBox<SpeedCombo> spdCombo;
+	private static JCheckBox[][] targetCheck = new JCheckBox[SetupMenu.values().length][3];
+	/** オブジェクトのユニークID */
+	private int objId = 0;
+
+	/** 画像ロード */
+	public static void loadImages(ClassLoader loader, ImageObserver io) throws IOException {
+		images[0] = ModLoader.loadItemImage(loader, "beltconveyor" + File.separator + "beltconveyor_r.png");
+		images[1] = ModLoader.loadItemImage(loader, "beltconveyor" + File.separator + "beltconveyor_u.png");
+		images[2] = ModLoader.loadItemImage(loader, "beltconveyor" + File.separator + "beltconveyor_l.png");
+		images[3] = ModLoader.loadItemImage(loader, "beltconveyor" + File.separator + "beltconveyor_d.png");
+
+		for (int i = 0; i < 4; i++) {
+			texture[i] = new TexturePaint(images[i],
+					new Rectangle2D.Float(0, 0, images[i].getWidth(), images[i].getHeight()));
+		}
+	}
+
+	/** シェイプポップアップを持つかを返す（常に BELT）。 */
+	@Override
+	public ShapeMenuTarget hasShapePopup() {
+		return ShapeMenuTarget.BELT;
+	}
+
+	/** シェイプポップアップのメニューアクションを実行する。 */
+	@Override
+	public void executeShapePopup(ShapeMenu menu) {
+
+		List<Beltconveyor> list = GameWorld.get().getCurrentWorldState().getBeltconveyors();
+		int pos;
+
+		switch (menu) {
+			case SETUP:
+				setupBelt(this);
+				break;
+			case TOP:
+				list.remove(this);
+				list.add(0, this);
+				break;
+			case UP:
+				pos = list.indexOf(this);
+				if (pos > 0) {
+					list.remove(this);
+					list.add(pos - 1, this);
+				}
+				break;
+			case DOWN:
+				pos = list.indexOf(this);
+				if (pos < (list.size() - 1)) {
+					list.remove(this);
+					list.add(pos + 1, this);
+				}
+				break;
+			case BOTTOM:
+				list.remove(this);
+				list.add(this);
+				break;
+			default:
+				break;
+		}
+	}
+
+	/** ベルトコンベアのフィールド属性値を返す。 */
+	@Override
+	@Transient
+	public int getAttribute() {
+		return FIELD_BELT;
+	}
+
+	/** バリアの最小サイズを返す。 */
+	@Override
+	@Transient
+	public int getMinimumSize() {
+		return MIN_SIZE;
+	}
+
+	/** プレビューラインの描画 */
+	public static void drawPreview(Graphics2D g2, int sx, int sy, int ex, int ey) {
+		int[] polygonX = new int[4];
+		int[] polygonY = new int[4];
+		Translate.getPolygonPoint(sx, sy, ex, ey, polygonX, polygonY);
+
+		g2.drawPolygon(polygonX, polygonY, 4);
+	}
+
+	/** ベルトコンベアの形状を描画する。 */
+	@Override
+	public void drawShape(Graphics2D g2) {
+		int[] polygonX = new int[4];
+		int[] polygonY = new int[4];
+		Translate.getPolygonPoint(fieldSx, fieldSy, fieldEx, fieldEy, polygonX, polygonY);
+
+		g2.setPaint(texture[direction.getDirect()]);
+		g2.fillPolygon(polygonX, polygonY, 4);
+		return;
+	}
+
+	/**
+	 * コンストラクタ
+	 *
+	 * @param fsx 設置起点のX座標
+	 * @param fsy 設置起点のY座標
+	 * @param fex 設置終点のX座標
+	 * @param fey 設置終点のY座標
+	 */
+	public Beltconveyor(int fsx, int fsy, int fex, int fey) {
+		objId = Numbering.INSTANCE.numberingObjId();
+		Point4y ps = Translate.getFieldLimitForWorld(fsx, fsy);
+		Point4y pe = Translate.getFieldLimitForWorld(fex, fey);
+		fieldSx = ps.getX();
+		fieldSy = ps.getY();
+		fieldEx = pe.getX();
+		fieldEy = pe.getY();
+
+		int[] basePolygonX = new int[2];
+		int[] basePolygonY = new int[2];
+		Translate.getMovedPoint(fieldSx, fieldSy, fieldEx, fieldEy, 0, 0, 0, 0, basePolygonX, basePolygonY);
+
+		// フィールド座標が渡ってくるのでマップ座標も計算しておく
+		Point4y pos = Translate.invertLimit(basePolygonX[0], basePolygonY[0]);
+		mapSx = Math.max(0, Math.min(pos.getX(), Translate.getWorldWidth()));
+		mapSy = Math.max(0, Math.min(pos.getY(), Translate.getWorldHeight()));
+
+		pos = Translate.invertLimit(basePolygonX[1], basePolygonY[1]);
+		mapEx = Math.max(0, Math.min(pos.getX(), Translate.getWorldWidth()));
+		mapEy = Math.max(0, Math.min(pos.getY(), Translate.getWorldHeight()));
+
+		// 規定サイズと位置へ合わせる
+		if ((mapEx - mapSx) < MIN_SIZE) {
+			mapEx = mapSx + MIN_SIZE;
+		}
+		if ((mapEy - mapSy) < MIN_SIZE) {
+			mapEy = mapSy + MIN_SIZE;
+		}
+		if (mapEx > Translate.getWorldWidth()) {
+			mapSx -= (mapEx - Translate.getWorldWidth());
+			mapEx -= (mapEx - Translate.getWorldWidth());
+		}
+		if (mapEy > Translate.getWorldHeight()) {
+			mapSy -= (mapEy - Translate.getWorldHeight());
+			mapEy -= (mapEy - Translate.getWorldHeight());
+		}
+
+		Point4y f = new Point4y();
+		Translate.translate(mapSx, mapSy, f);
+		fieldSx = f.getX();
+		fieldSy = f.getY();
+		Translate.translate(mapEx, mapEy, f);
+		fieldEx = f.getX();
+		fieldEy = f.getY();
+
+		fieldW = fieldEx - fieldSx + 1;
+		fieldH = fieldEy - fieldSy + 1;
+		mapW = mapEx - mapSx + 1;
+		mapH = mapEy - mapSy + 1;
+
+		setting[2][0] = true;
+		setting[2][1] = true;
+		setting[2][2] = true;
+		direction = DirectCombo.RIGHT;
+		beltSpeed = SpeedCombo.MIDDLE;
+
+		boolean success = setupBelt(this);
+		if (success) {
+			GameWorld.get().getCurrentWorldState().getBeltconveyors().add(this);
+			WorldState.setFieldFlag(GameWorld.get().getCurrentWorldState().getFieldGrid(), mapSx, mapSy, mapW, mapH, true,
+					FIELD_BELT);
+		}
+	}
+
+	/** Jackson デシリアライズ用デフォルトコンストラクタ。 */
+	public Beltconveyor() {
+
+	}
+
+	/** 処理する必要のあるオブジェクトか判定 */
+	public boolean checkHitObj(Entity o) {
+
+		boolean matches = false;
+
+		switch (o.getObjType()) {
+			case YUKKURI:
+				Yukkuri b = (Yukkuri) o;
+				int ageIdx = b.getAgeState().ordinal();
+				int bodyIdx;
+				// settingのインデックスはSetupButton.ordinal() + SetupMenu.NORMAL_BABY.ordinal()
+				// setupBeltで連続した行(2,3,4,5,6)に保存しているため
+				if (b.isHybrid()) {
+					// ハイブリッド
+					bodyIdx = SetupButton.HYBRID.ordinal() + SetupMenu.NORMAL_BABY.ordinal();
+				} else if (b.isIdiot()) {
+					// 足りない
+					bodyIdx = SetupButton.IDIOT.ordinal() + SetupMenu.NORMAL_BABY.ordinal();
+				} else if (b.isRareType()) {
+					// 希少種
+					bodyIdx = SetupButton.RARE.ordinal() + SetupMenu.NORMAL_BABY.ordinal();
+				} else if (b.isPredatorType()) {
+					// 捕食種
+					bodyIdx = SetupButton.PREDATOR.ordinal() + SetupMenu.NORMAL_BABY.ordinal();
+				} else {
+					// 通常種
+					bodyIdx = SetupButton.NORMAL.ordinal() + SetupMenu.NORMAL_BABY.ordinal();
+				}
+				if (setting[bodyIdx][ageIdx]) {
+					matches = true;
+				}
+				break;
+			case SHIT:
+				if (setting[SetupMenu.SHIT.ordinal()][0]) {
+					matches = true;
+				}
+				break;
+			case OBJECT:
+				if (o instanceof Food) {
+					if (setting[SetupMenu.FOOD.ordinal()][0]) {
+						matches = true;
+					}
+				} else if (o instanceof Stalk) {
+					if (setting[SetupMenu.STALK.ordinal()][0]) {
+						matches = true;
+					}
+				}
+				break;
+			case VOMIT:
+				if (setting[SetupMenu.VOMIT.ordinal()][0]) {
+					matches = true;
+				}
+				break;
+			default:
+				break;
+		}
+		return matches;
+	}
+
+	/** ヒットしたオブジェクトの処理 */
+	public void processHitObj(Entity o) {
+
+		switch (direction) {
+			case RIGHT:
+				o.addMotion(beltSpeed.getSpeed(), 0, 0);
+				break;
+			case UP:
+				o.addMotion(0, -beltSpeed.getSpeed(), 0);
+				break;
+			case LEFT:
+				o.addMotion(-beltSpeed.getSpeed(), 0, 0);
+				break;
+			case BOTTOM:
+				o.addMotion(0, beltSpeed.getSpeed(), 0);
+				break;
+			default:
+				break;
+		}
+	}
+
+	/** フィールド座標にあるシェイプ取得 */
+	public static Beltconveyor getBeltconveyor(int fx, int fy) {
+
+		for (Beltconveyor bc : GameWorld.get().getCurrentWorldState().getBeltconveyors()) {
+			if (bc.fieldSx <= fx && fx <= bc.fieldEx
+					&& bc.fieldSy <= fy && fy <= bc.fieldEy) {
+				return bc;
+			}
+		}
+		return null;
+	}
+
+	/** 削除 */
+	public static void deleteBelt(Beltconveyor b) {
+		WorldState.setFieldFlag(GameWorld.get().getCurrentWorldState().getFieldGrid(), b.mapSx, b.mapSy, b.mapW, b.mapH,
+				false,
+				FIELD_BELT);
+		GameWorld.get().getCurrentWorldState().getBeltconveyors().remove(b);
+		// 重なってた部分の復元
+		for (Beltconveyor bc : GameWorld.get().getCurrentWorldState().getBeltconveyors()) {
+			WorldState.setFieldFlag(GameWorld.get().getCurrentWorldState().getFieldGrid(), bc.mapSx, bc.mapSy, bc.mapW,
+					bc.mapH,
+					true,
+					FIELD_BELT);
+		}
+	}
+
+	/** 設定メニュー */
+	public static boolean setupBelt(Beltconveyor b) {
+
+		JPanel mainPanel = new JPanel();
+		JPanel northPanel = new JPanel();
+
+		// パネル全体
+		mainPanel.setLayout(new BorderLayout());
+		mainPanel.setPreferredSize(new Dimension(300, 300));
+		// 上部ラベル
+		northPanel.setLayout(new GridLayout(1, 3));
+		// 左側ボタン列
+		final JPanel westPanel = new JPanel();
+		westPanel.setLayout(new GridLayout(6, 1));
+		westPanel.setPreferredSize(new Dimension(120, 300));
+		// 中央チェックボックス
+		final JPanel centerPanel = new JPanel();
+		centerPanel.setLayout(new GridLayout(6, 3));
+		// 下部その他設定
+		final JPanel southPanel = new JPanel();
+		southPanel.setLayout(new GridLayout(2, 2));
+
+		final ButtonListener butAction = new ButtonListener();
+
+		// 上
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.X_AXIS));
+
+		JLabel label = new JLabel(SetupMenu.DIRECT.toString());
+		panel.add(label);
+		dirCombo = new JComboBox<Beltconveyor.DirectCombo>(DirectCombo.values());
+		dirCombo.setSelectedIndex(b.direction.ordinal());
+		dirCombo.setActionCommand(SetupMenu.SPEED.name());
+		panel.add(dirCombo);
+
+		panel.add(new JLabel("     "));
+
+		label = new JLabel(SetupMenu.SPEED.toString());
+		panel.add(label);
+		spdCombo = new JComboBox<Beltconveyor.SpeedCombo>(SpeedCombo.values());
+		spdCombo.setSelectedIndex(b.beltSpeed.ordinal());
+		spdCombo.setActionCommand(SetupMenu.SPEED.name());
+		panel.add(spdCombo);
+
+		northPanel.add(panel);
+
+		// 左
+		westPanel.add(new JLabel(""));
+		for (SetupButton bp : SetupButton.values()) {
+			JButton but = new JButton(bp.toString());
+			but.addActionListener(butAction);
+			but.setActionCommand(bp.name());
+			westPanel.add(but);
+		}
+
+		// 中
+		label = new JLabel("赤ゆ");
+		centerPanel.add(label);
+		label = new JLabel("子ゆ");
+		centerPanel.add(label);
+		label = new JLabel("成ゆ");
+		centerPanel.add(label);
+		SetupMenu[] body = SetupMenu.values();
+		int row = SetupMenu.NORMAL_BABY.ordinal();
+		int col = 0;
+		for (int i = SetupMenu.NORMAL_BABY.ordinal(); i <= SetupMenu.HYBRID_ADULT.ordinal(); i++) {
+			targetCheck[row][col] = new JCheckBox("");
+			targetCheck[row][col].setSelected(b.setting[row][col]);
+			targetCheck[row][col].setActionCommand(body[i].name());
+			centerPanel.add(targetCheck[row][col]);
+			col++;
+			if (col == 3) {
+				col = 0;
+				row++;
+			}
+		}
+
+		// 下
+		row = SetupMenu.HYBRID_ADULT.ordinal() + 1;
+		for (int i = SetupMenu.SHIT.ordinal(); i <= SetupMenu.STALK.ordinal(); i++) {
+			targetCheck[row][0] = new JCheckBox(body[i].toString());
+			targetCheck[row][0].setSelected(b.setting[row][0]);
+			targetCheck[row][0].setActionCommand(body[i].name());
+			southPanel.add(targetCheck[row][0]);
+			row++;
+		}
+
+		mainPanel.add(BorderLayout.NORTH, northPanel);
+		mainPanel.add(BorderLayout.WEST, westPanel);
+		mainPanel.add(BorderLayout.CENTER, centerPanel);
+		mainPanel.add(BorderLayout.SOUTH, southPanel);
+
+		boolean ret = false;
+		int dlgRet = JOptionPane.showConfirmDialog(GameView.getDialogParent(), mainPanel,
+				GameText.read("item_coveyersettings"), JOptionPane.OK_CANCEL_OPTION,
+				JOptionPane.PLAIN_MESSAGE);
+
+		if (dlgRet == JOptionPane.OK_OPTION) {
+			b.direction = DirectCombo.values()[dirCombo.getSelectedIndex()];
+			b.beltSpeed = SpeedCombo.values()[spdCombo.getSelectedIndex()];
+
+			row = SetupMenu.NORMAL_BABY.ordinal();
+			col = 0;
+			for (int i = SetupMenu.NORMAL_BABY.ordinal(); i <= SetupMenu.HYBRID_ADULT.ordinal(); i++) {
+				b.setting[row][col] = targetCheck[row][col].isSelected();
+				col++;
+				if (col == 3) {
+					col = 0;
+					row++;
+				}
+			}
+
+			row = SetupMenu.HYBRID_ADULT.ordinal() + 1;
+			for (int i = SetupMenu.SHIT.ordinal(); i <= SetupMenu.STALK.ordinal(); i++) {
+				b.setting[row][0] = targetCheck[row][0].isSelected();
+				row++;
+			}
+			ret = true;
+		}
+		return ret;
+	}
+
+	/** ボタン操作の反映作業 */
+	public static class ButtonListener implements ActionListener {
+
+		/**
+		 * Action performed.
+		 *
+		 * @param e イベント
+		 */
+		@Override
+		public void actionPerformed(ActionEvent e) {
+			String command = e.getActionCommand();
+
+			SetupButton but = SetupButton.valueOf(command);
+			int row = but.ordinal() + SetupMenu.NORMAL_BABY.ordinal();
+			if (targetCheck[row][0].isSelected()) {
+				targetCheck[row][0].setSelected(false);
+				targetCheck[row][1].setSelected(false);
+				targetCheck[row][2].setSelected(false);
+			} else {
+				targetCheck[row][0].setSelected(true);
+				targetCheck[row][1].setSelected(true);
+				targetCheck[row][2].setSelected(true);
+			}
+		}
+	}
+
+	/** 各ゆっくり種別・年齢の搬送設定フラグ配列を返す。 */
+	public boolean[][] getSetting() {
+		return setting;
+	}
+
+	/** 搬送設定フラグ配列をセットする。 */
+	public void setSetting(boolean[][] setting) {
+		this.setting = setting;
+	}
+
+	/** ベルトの移動方向を返す。 */
+	public DirectCombo getDirection() {
+		return direction;
+	}
+
+	/** ベルトの移動方向をセットする。 */
+	public void setDirection(DirectCombo direction) {
+		this.direction = direction;
+	}
+
+	/** ベルトコンベアの速度設定を返す。 */
+	public SpeedCombo getBeltSpeed() {
+		return beltSpeed;
+	}
+
+	/** ベルトコンベアの速度設定をセットする。 */
+	public void setBeltSpeed(SpeedCombo beltSpeed) {
+		this.beltSpeed = beltSpeed;
+	}
+
+	/** このフィールドオブジェクトの ID を返す。 */
+	public int getObjId() {
+		return objId;
+	}
+
+	/** このフィールドオブジェクトの ID をセットする。 */
+	public void setObjId(int objId) {
+		this.objId = objId;
+	}
+
+}

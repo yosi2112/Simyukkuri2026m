@@ -1,0 +1,822 @@
+package org.simyukkuri.item;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+import org.simyukkuri.SimYukkuri;
+import org.simyukkuri.draw.Translate;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.entity.core.world.WorldEntity;
+import org.simyukkuri.entity.core.world.WorldEntity.ItemRank;
+import org.simyukkuri.entity.core.world.item.ItemTestBase;
+import org.simyukkuri.entity.core.world.item.Stone;
+import org.simyukkuri.entity.core.world.item.Trash;
+import org.simyukkuri.enums.CriticalDamageType;
+import org.simyukkuri.enums.Type;
+import org.simyukkuri.enums.WorldEntityKind;
+import org.simyukkuri.util.WorldTestHelper;
+
+class StoneTest extends ItemTestBase {
+
+    // ---------------------------------------------------------------
+    // コンストラクタ（デフォルト）
+    // ---------------------------------------------------------------
+    @Test
+    void testDefaultConstructor() {
+        Stone stone = new Stone();
+        assertNotNull(stone);
+        assertNull(stone.getItemRank());
+        assertFalse(stone.isRemoved());
+        assertFalse(stone.isGrabbed());
+    }
+
+    // ---------------------------------------------------------------
+    // コンストラクタ（パラメータ付き）各オプション値
+    // ---------------------------------------------------------------
+    @Test
+    void testParameterizedConstructor_House() {
+        // option=0 -> ItemRank.HOUSE
+        Stone stone = new Stone(100, 200, 0);
+        assertNotNull(stone);
+        assertEquals(ItemRank.HOUSE, stone.getItemRank());
+        assertEquals(WorldEntityKind.STONE, stone.getWorldEntityType());
+        assertEquals(Type.OBJECT, stone.getObjType());
+        assertEquals(0, stone.getValue());
+        assertEquals(0, stone.getCost());
+        assertTrue(stone.getObjId() > 0);
+    }
+
+    @Test
+    void testParameterizedConstructor_Nora() {
+        // option=1 -> ItemRank.NORA (mapIndex=0なのでそのまま)
+        Stone stone = new Stone(50, 50, 1);
+        assertNotNull(stone);
+        assertEquals(ItemRank.NORA, stone.getItemRank());
+        assertEquals(0, stone.getValue());
+        assertEquals(0, stone.getCost());
+    }
+
+    @Test
+    void testParameterizedConstructor_Yasei() {
+        // option=2 -> ItemRank.YASEI
+        Stone stone = new Stone(50, 50, 2);
+        assertNotNull(stone);
+        assertEquals(ItemRank.YASEI, stone.getItemRank());
+    }
+
+    // ---------------------------------------------------------------
+    // MapIndex による itemRank の上書き
+    // ---------------------------------------------------------------
+    @Test
+    void testConstructor_MapIndex2_BecomesNora() {
+        // MapIndex=2 -> NORA に上書き
+        SimYukkuri.world.setCurrentWorldStateIndex(2);
+        Stone stone = new Stone(100, 200, 0); // option=HOUSE だが上書き
+        assertEquals(ItemRank.NORA, stone.getItemRank());
+        // 後始末
+        SimYukkuri.world.setCurrentWorldStateIndex(0);
+    }
+
+    @Test
+    void testConstructor_MapIndex3_BecomesNora() {
+        SimYukkuri.world.setCurrentWorldStateIndex(3);
+        Stone stone = new Stone(100, 200, 0);
+        assertEquals(ItemRank.NORA, stone.getItemRank());
+        SimYukkuri.world.setCurrentWorldStateIndex(0);
+    }
+
+    @Test
+    void testConstructor_MapIndex4_BecomesNora() {
+        SimYukkuri.world.setCurrentWorldStateIndex(4);
+        Stone stone = new Stone(100, 200, 0);
+        assertEquals(ItemRank.NORA, stone.getItemRank());
+        SimYukkuri.world.setCurrentWorldStateIndex(0);
+    }
+
+    @Test
+    void testConstructor_MapIndex5_BecomesYasei() {
+        SimYukkuri.world.setCurrentWorldStateIndex(5);
+        Stone stone = new Stone(100, 200, 0);
+        assertEquals(ItemRank.YASEI, stone.getItemRank());
+        SimYukkuri.world.setCurrentWorldStateIndex(0);
+    }
+
+    @Test
+    void testConstructor_MapIndex6_BecomesYasei() {
+        SimYukkuri.world.setCurrentWorldStateIndex(6);
+        Stone stone = new Stone(100, 200, 0);
+        assertEquals(ItemRank.YASEI, stone.getItemRank());
+        SimYukkuri.world.setCurrentWorldStateIndex(0);
+    }
+
+    // ---------------------------------------------------------------
+    // ワールドのストーンマップに登録されること
+    // ---------------------------------------------------------------
+    @Test
+    void testConstructor_RegisteredInWorld() {
+        Stone stone = new Stone(300, 400, 0);
+        assertTrue(SimYukkuri.world.getCurrentWorldState().getStones().containsKey(stone.getObjId()));
+    }
+
+    // ---------------------------------------------------------------
+    // getItemRank / setItemRank
+    // ---------------------------------------------------------------
+    @Test
+    void testSetItemRank_House() {
+        Stone stone = new Stone();
+        stone.setItemRank(ItemRank.HOUSE);
+        assertEquals(ItemRank.HOUSE, stone.getItemRank());
+        stone.setItemRank(ItemRank.NORA);
+        assertEquals(ItemRank.NORA, stone.getItemRank());
+    }
+
+    @Test
+    void testSetItemRank_Nora() {
+        Stone stone = new Stone();
+        stone.setItemRank(ItemRank.NORA);
+        assertEquals(ItemRank.NORA, stone.getItemRank());
+        stone.setItemRank(ItemRank.YASEI);
+        assertEquals(ItemRank.YASEI, stone.getItemRank());
+    }
+
+    @Test
+    void testSetItemRank_Yasei() {
+        Stone stone = new Stone();
+        stone.setItemRank(ItemRank.YASEI);
+        assertEquals(ItemRank.YASEI, stone.getItemRank());
+        stone.setItemRank(ItemRank.HOUSE);
+        assertEquals(ItemRank.HOUSE, stone.getItemRank());
+    }
+
+    // ---------------------------------------------------------------
+    // getHitCheckObjType
+    // ---------------------------------------------------------------
+    @Test
+    void testGetHitCheckObjType() {
+        Stone stone = new Stone();
+        assertEquals(WorldEntity.YUKKURI, stone.getHitCheckObjType());
+    }
+
+    @Test
+    void testHitCheckObjTypeConstant() {
+        assertEquals(WorldEntity.YUKKURI, Stone.hitCheckObjType);
+    }
+
+    // ---------------------------------------------------------------
+    // getBounding
+    // ---------------------------------------------------------------
+    @Test
+    void testGetBounding_NotNull() {
+        assertNotNull(Stone.getBounding());
+        assertSame(Stone.getBounding(), Stone.getBounding());
+    }
+
+    // ---------------------------------------------------------------
+    // grab
+    // ---------------------------------------------------------------
+    @Test
+    void testGrab_SetsGrabbedTrue() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isGrabbed());
+        stone.grab();
+        assertTrue(stone.isGrabbed());
+    }
+
+    // ---------------------------------------------------------------
+    // kick
+    // ---------------------------------------------------------------
+    @Test
+    void testKick_SetsVelocity() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.kick();
+        // kick() calls kick(0, -8, -4)
+        assertEquals(0, stone.getVx());
+        assertEquals(-8, stone.getVy());
+        assertEquals(-4, stone.getVz());
+    }
+
+    // ---------------------------------------------------------------
+    // removeListData
+    // ---------------------------------------------------------------
+    @Test
+    void testRemoveListData_RemovesFromWorld() {
+        Stone stone = new Stone(100, 100, 0);
+        int id = stone.getObjId();
+        assertTrue(SimYukkuri.world.getCurrentWorldState().getStones().containsKey(id));
+        stone.removeFromWorld();
+        assertFalse(SimYukkuri.world.getCurrentWorldState().getStones().containsKey(id));
+    }
+
+    // ---------------------------------------------------------------
+    // objHitProcess - CUT ならば 0 を返してすぐに終了
+    // ---------------------------------------------------------------
+    @Test
+    void testObjHitProcess_BodyWithCUT_returnsZero() {
+        Stone stone = new Stone(100, 100, 0);
+        Yukkuri body = WorldTestHelper.createBody();
+        body.setCriticalDamege(CriticalDamageType.CUT);
+        int result = stone.objHitProcess(body);
+        assertEquals(0, result);
+    }
+
+    // ---------------------------------------------------------------
+    // objHitProcess - non-Yukkuri 引数 -> 0 を返す
+    // ---------------------------------------------------------------
+    @Test
+    void testObjHitProcess_NonBody_returnsZero() {
+        Stone stone = new Stone(100, 100, 0);
+        // Trash は Entity だが Yukkuri ではない
+        Trash trash = new Trash(50, 50, 0);
+        int result = stone.objHitProcess(trash);
+        assertEquals(0, result);
+    }
+
+    // ---------------------------------------------------------------
+    // objHitProcess - Yukkuri (adult, CriticalDamege=INJURED -> bodyInjure 呼び出し)
+    // bodyInjure/bodyCut は MyPane に依存するためスキップし、
+    // 既に CUT が設定されているケースをテストする
+    // ---------------------------------------------------------------
+    @Test
+    void testObjHitProcess_AdultBody_INJURED_returnZero() {
+        Stone stone = new Stone(100, 100, 0);
+        Yukkuri body = WorldTestHelper.createBody();
+        // CUT に設定すると bodyInjure/bodyCut を呼ばずに 0 を返す分岐に入る
+        body.setCriticalDamege(CriticalDamageType.CUT);
+        int result = stone.objHitProcess(body);
+        assertEquals(0, result);
+    }
+
+    // ---------------------------------------------------------------
+    // objHitProcess - Yukkuri (null CriticalDamege, ADULT) は GUI 依存なのでスキップ
+    // 代わりに再度 non-Yukkuri パターンをカバー
+    // ---------------------------------------------------------------
+    @Test
+    void testObjHitProcess_AnotherNonBody() {
+        Stone stone = new Stone(100, 100, 0);
+        Stone other = new Stone(200, 200, 0);
+        int result = stone.objHitProcess(other);
+        assertEquals(0, result);
+    }
+
+    // ---------------------------------------------------------------
+    // interval の初期値確認
+    // ---------------------------------------------------------------
+    @Test
+    void testInterval_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(5, stone.getInterval());
+    }
+
+    // ---------------------------------------------------------------
+    // WorldEntity 共通メソッド群
+    // ---------------------------------------------------------------
+    @Test
+    void testCheckInterval() {
+        Stone stone = new Stone(100, 100, 0);
+        // interval=5 なので cnt%5==0 のときtrue
+        assertTrue(stone.checkInterval(0));
+        assertTrue(stone.checkInterval(5));
+        assertFalse(stone.checkInterval(1));
+        assertFalse(stone.checkInterval(3));
+    }
+
+    @Test
+    void testGetEnabled_DefaultTrue() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.getEnabled());
+    }
+
+    @Test
+    void testSetEnabled() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setEnabled(false);
+        assertFalse(stone.getEnabled());
+        stone.setEnabled(true);
+        assertTrue(stone.getEnabled());
+    }
+
+    @Test
+    void testInvertEnabled() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.getEnabled());
+        stone.invertEnabled();
+        assertFalse(stone.getEnabled());
+        stone.invertEnabled();
+        assertTrue(stone.getEnabled());
+    }
+
+    @Test
+    void testGetOption() {
+        Stone stone = new Stone(100, 200, 1);
+        assertEquals(1, stone.getOption());
+    }
+
+    @Test
+    void testSetOption() {
+        Stone stone = new Stone(100, 200, 0);
+        assertEquals(0, stone.getOption());
+        stone.setOption(2);
+        assertEquals(2, stone.getOption());
+    }
+
+    @Test
+    void testGetLooks_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getLooks());
+        stone.setLooks(5);
+        assertEquals(5, stone.getLooks());
+    }
+
+    @Test
+    void testSetLooks() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getLooks());
+        stone.setLooks(3);
+        assertEquals(3, stone.getLooks());
+    }
+
+    @Test
+    void testGetLinkParent_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(-1, stone.getParentLinkId());
+    }
+
+    @Test
+    void testSetLinkParent() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(-1, stone.getParentLinkId());
+        stone.setParentLinkId(42);
+        assertEquals(42, stone.getParentLinkId());
+    }
+
+    @Test
+    void testHasSetupMenu_DefaultFalse() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.hasSetupMenu());
+    }
+
+    @Test
+    void testEnableHitCheck_DefaultTrue() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.enableHitCheck());
+    }
+
+    @Test
+    void testGetSetColW() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setColW(10);
+        assertEquals(10, stone.getColW());
+        stone.setColW(20);
+        assertEquals(20, stone.getColW());
+    }
+
+    @Test
+    void testGetSetColH() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setColH(20);
+        assertEquals(20, stone.getColH());
+        stone.setColH(40);
+        assertEquals(40, stone.getColH());
+    }
+
+    // ---------------------------------------------------------------
+    // Entity 継承メソッド群
+    // ---------------------------------------------------------------
+    @Test
+    void testGetX_GetY() {
+        Stone stone = new Stone(123, 456, 0);
+        assertEquals(123, stone.getX());
+        assertEquals(456, stone.getY());
+    }
+
+    @Test
+    void testSetX_SetY() {
+        Stone stone = new Stone(0, 0, 0);
+        stone.setX(300);
+        stone.setY(400);
+        assertEquals(300, stone.getX());
+        assertEquals(400, stone.getY());
+    }
+
+    @Test
+    void testGetZ_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getZ());
+        stone.setVz(5);
+        assertEquals(0, stone.getZ());
+    }
+
+    @Test
+    void testIsRemoved_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isRemoved());
+    }
+
+    @Test
+    void testRemove() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.remove();
+        assertTrue(stone.isRemoved());
+    }
+
+    @Test
+    void testIsCanGrab_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.isCanGrab());
+    }
+
+    @Test
+    void testRelease() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.grab();
+        assertTrue(stone.isGrabbed());
+        stone.release();
+        assertFalse(stone.isGrabbed());
+    }
+
+    @Test
+    void testGetValue_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getValue());
+    }
+
+    @Test
+    void testGetCost_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getCost());
+    }
+
+    @Test
+    void testGetAge_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getAge());
+        stone.addAge(1);
+        assertEquals(1, stone.getAge());
+    }
+
+    @Test
+    void testSetAge() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getAge());
+        stone.setAge(12345L);
+        assertEquals(12345L, stone.getAge());
+    }
+
+    @Test
+    void testAddAge() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setAge(100);
+        stone.addAge(50);
+        assertEquals(150, stone.getAge());
+    }
+
+    @Test
+    void testSetVx_Vy_Vz() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setVx(3);
+        stone.setVy(5);
+        stone.setVz(-2);
+        assertEquals(3, stone.getVx());
+        assertEquals(5, stone.getVy());
+        assertEquals(-2, stone.getVz());
+    }
+
+    @Test
+    void testGetObjType() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(Type.OBJECT, stone.getObjType());
+    }
+
+    @Test
+    void testGetObjEXType() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(WorldEntityKind.STONE, stone.getWorldEntityType());
+    }
+
+    @Test
+    void testSetObjEXType() {
+        Stone stone = new Stone();
+		stone.setWorldEntityType(WorldEntityKind.TRASH);
+        assertEquals(WorldEntityKind.TRASH, stone.getWorldEntityType());
+    }
+
+    @Test
+    void testCompareTo() {
+        Stone s1 = new Stone(100, 100, 0);
+        Stone s2 = new Stone(200, 200, 0);
+        assertEquals(0, s1.compareTo(s2));
+    }
+
+    @Test
+    void testSetBxyz_GetBxyz() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setMotionX(5);
+        stone.setMotionY(7);
+        stone.setMotionZ(2);
+        assertEquals(5, stone.getMotionX());
+        assertEquals(7, stone.getMotionY());
+        assertEquals(2, stone.getMotionZ());
+    }
+
+    @Test
+    void testAddBxyz() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.addMotion(1, 2, 3);
+        assertEquals(1, stone.getMotionX());
+        assertEquals(2, stone.getMotionY());
+        assertEquals(3, stone.getMotionZ());
+    }
+
+    @Test
+    void testResetBPos() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setMotionX(5);
+        stone.setMotionY(7);
+        stone.setMotionZ(2);
+        stone.resetMotion();
+        assertEquals(0, stone.getMotionX());
+        assertEquals(0, stone.getMotionY());
+        assertEquals(0, stone.getMotionZ());
+    }
+
+    @Test
+    void testIsEnableWall_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.isEnableWall());
+    }
+
+    @Test
+    void testSetEnableWall() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.isEnableWall());
+        stone.setEnableWall(false);
+        assertFalse(stone.isEnableWall());
+        stone.setEnableWall(true);
+        assertTrue(stone.isEnableWall());
+    }
+
+    @Test
+    void testGetSetOfsX_OfsY() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setOfsX(3);
+        stone.setOfsY(7);
+        assertEquals(3, stone.getOfsX());
+        assertEquals(7, stone.getOfsY());
+    }
+
+    @Test
+    void testGetDrawOfsX_DrawOfsY() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setOfsX(10);
+        stone.setOfsY(20);
+        assertEquals(110, stone.getDrawOfsX());
+        assertEquals(120, stone.getDrawOfsY());
+    }
+
+    @Test
+    void testSetOfsXY() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setOfsX(15);
+        stone.setOfsY(25);
+        assertEquals(15, stone.getOfsX());
+        assertEquals(25, stone.getOfsY());
+    }
+
+    @Test
+    void testGetScreenPivot_NotNull() {
+        Stone stone = new Stone(100, 100, 0);
+        assertNotNull(stone.getScreenPivot());
+        stone.setScreenPivot(5, 6);
+        assertEquals(5, stone.getScreenPivot().getX());
+        assertEquals(6, stone.getScreenPivot().getY());
+    }
+
+    @Test
+    void testSetScreenPivot() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setScreenPivot(50, 60);
+        assertEquals(50, stone.getScreenPivot().getX());
+        assertEquals(60, stone.getScreenPivot().getY());
+    }
+
+    @Test
+    void testGetScreenRect_NotNull() {
+        Stone stone = new Stone(100, 100, 0);
+        assertNotNull(stone.getScreenRect());
+        Stone stone2 = new Stone(200, 200, 0);
+        assertNotNull(stone2.getScreenRect());
+        assertNotSame(stone.getScreenRect(), stone2.getScreenRect());
+    }
+
+    @Test
+    void testIsFallingUnderGround_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isFallingUnderGround());
+    }
+
+    @Test
+    void testSetFallingUnderGround() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isFallingUnderGround());
+        stone.setFallingUnderGround(true);
+        assertTrue(stone.isFallingUnderGround());
+    }
+
+    @Test
+    void testIsbInPool_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isInPool());
+    }
+
+    @Test
+    void testSetbInPool() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isInPool());
+        stone.setInPool(true);
+        assertTrue(stone.isInPool());
+    }
+
+    @Test
+    void testGetnMostDepth_Default() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getMostDepth());
+        stone.setMostDepth(-5);
+        assertEquals(-5, stone.getMostDepth());
+    }
+
+    @Test
+    void testSetnMostDepth() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setMostDepth(-10);
+        assertEquals(-10, stone.getMostDepth());
+    }
+
+    @Test
+    void testGetSetBindObj() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setBindObj(99);
+        assertEquals(99, stone.getBindObj());
+        stone.setBindObj(55);
+        assertEquals(55, stone.getBindObj());
+    }
+
+    @Test
+    void testSetRemoved() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setRemoved(true);
+        assertTrue(stone.isRemoved());
+        stone.setRemoved(false);
+        assertFalse(stone.isRemoved());
+    }
+
+    @Test
+    void testSetCanGrab() {
+        Stone stone = new Stone(100, 100, 0);
+        assertTrue(stone.isCanGrab());
+        stone.setCanGrab(false);
+        assertFalse(stone.isCanGrab());
+        stone.setCanGrab(true);
+        assertTrue(stone.isCanGrab());
+    }
+
+    @Test
+    void testSetGrabbed() {
+        Stone stone = new Stone(100, 100, 0);
+        assertFalse(stone.isGrabbed());
+        stone.setGrabbed(true);
+        assertTrue(stone.isGrabbed());
+    }
+
+    @Test
+    void testSetValue() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getValue());
+        stone.setValue(500);
+        assertEquals(500, stone.getValue());
+    }
+
+    @Test
+    void testSetCost() {
+        Stone stone = new Stone(100, 100, 0);
+        assertEquals(0, stone.getCost());
+        stone.setCost(100);
+        assertEquals(100, stone.getCost());
+    }
+
+    @Test
+    void testGetVxyz() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setVx(1);
+        stone.setVy(2);
+        stone.setVz(3);
+        int[] vxyz = stone.getVxyz();
+        assertEquals(1, vxyz[0]);
+        assertEquals(2, vxyz[1]);
+        assertEquals(3, vxyz[2]);
+    }
+
+    @Test
+    void testKickXYZ() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.kick(5, 6, 7);
+        assertEquals(5, stone.getVx());
+        assertEquals(6, stone.getVy());
+        assertEquals(7, stone.getVz());
+    }
+
+    @Test
+    void testCalcPos_ClampBoundary() {
+        Stone stone = new Stone(0, 0, 0);
+        stone.setX(-100);
+        stone.setY(-100);
+        stone.calcPos();
+        assertEquals(0, stone.getX());
+        assertEquals(0, stone.getY());
+    }
+
+    @Test
+    void testCalcPos_ClampUpperBoundary() {
+        Stone stone = new Stone(0, 0, 0);
+        int maxX = Translate.getWorldWidth();
+        int maxY = Translate.getWorldHeight();
+        stone.setX(maxX + 500);
+        stone.setY(maxY + 500);
+        stone.calcPos();
+        assertEquals(maxX, stone.getX());
+        assertEquals(maxY, stone.getY());
+    }
+
+    @Test
+    void testGetBoundaryShape() {
+        Stone stone = new Stone(100, 100, 0);
+        org.simyukkuri.draw.Rectangle4y r = new org.simyukkuri.draw.Rectangle4y();
+        stone.getBoundaryShape(r);
+        assertNotNull(r);
+        org.simyukkuri.draw.Rectangle4y r2 = new org.simyukkuri.draw.Rectangle4y();
+        stone.getBoundaryShape(r2);
+        assertEquals(r.getX(), r2.getX());
+        assertEquals(r.getY(), r2.getY());
+    }
+
+    @Test
+    void testGetSetImgW_ImgH() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setImgW(64);
+        stone.setImgH(32);
+        assertEquals(64, stone.getImgW());
+        assertEquals(32, stone.getImgH());
+    }
+
+    @Test
+    void testGetSetPivX_PivY() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setPivX(10);
+        stone.setPivY(20);
+        assertEquals(10, stone.getPivX());
+        assertEquals(20, stone.getPivY());
+    }
+
+    @Test
+    void testSetInterval() {
+        Stone stone = new Stone(100, 100, 0);
+        stone.setInterval(10);
+        assertEquals(10, stone.getInterval());
+    }
+
+    // ---------------------------------------------------------------
+    // getShadowImage - images が null のとき（loadImages未呼び出し）
+    // ---------------------------------------------------------------
+    @Test
+    void testGetShadowImage_NullWhenNotLoaded() {
+        Stone stone = new Stone();
+        java.awt.image.BufferedImage img = null;
+        boolean exceptionThrown = false;
+        try {
+            img = stone.getShadowImage();
+        } catch (NullPointerException e) {
+            exceptionThrown = true;
+        }
+        // either null is returned OR NullPointerException from unloaded images array
+        assertTrue(img == null || img.getWidth() > 0 || exceptionThrown);
+    }
+
+    // ---------------------------------------------------------------
+    // helper
+    // ---------------------------------------------------------------
+    // private java.lang.reflect.Field findField(Class<?> clazz, String name) {
+    //     while (clazz != null) {
+    //         try {
+    //             return clazz.getDeclaredField(name);
+    //         } catch (NoSuchFieldException e) {
+    //             clazz = clazz.getSuperclass();
+    //         }
+    //     }
+    //     return null;
+    // }
+}

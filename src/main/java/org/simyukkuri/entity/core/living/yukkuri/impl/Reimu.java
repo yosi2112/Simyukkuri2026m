@@ -1,0 +1,666 @@
+package org.simyukkuri.entity.core.living.yukkuri.impl;
+
+import java.awt.image.BufferedImage;
+import java.awt.image.ImageObserver;
+import java.beans.Transient;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import org.simyukkuri.Const;
+import org.simyukkuri.draw.Dimension4y;
+import org.simyukkuri.draw.Point4y;
+import org.simyukkuri.engine.ModLoader;
+import org.simyukkuri.engine.transform.TransformationService;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.entity.core.world.bodylinked.Okazari.OkazariType;
+import org.simyukkuri.enums.AgeState;
+import org.simyukkuri.enums.Attitude;
+import org.simyukkuri.enums.CriticalDamageType;
+import org.simyukkuri.enums.HairState;
+import org.simyukkuri.enums.ImageCode;
+import org.simyukkuri.enums.Intelligence;
+import org.simyukkuri.enums.PlayStyle;
+import org.simyukkuri.enums.YukkuriRank;
+import org.simyukkuri.enums.YukkuriType;
+import org.simyukkuri.logic.ToyLogic;
+import org.simyukkuri.system.MessagePool;
+import org.simyukkuri.system.YukkuriLayer;
+import org.simyukkuri.util.GameEnvironment;
+import org.simyukkuri.util.GameMessages;
+import org.simyukkuri.util.GameRandom;
+import org.simyukkuri.util.IniFileUtil;
+
+/** れいむ。でいぶ、わさ、まりされいむはこれを継承している */
+public class Reimu extends Yukkuri {
+	private static final long serialVersionUID = -7573106487924456286L;
+	/** れいむのタイプ */
+	public static final YukkuriType type = YukkuriType.REIMU;
+	/** れいむ和名 */
+	public static final String nameJ = "れいむ";
+	/** れいむ英名 */
+	public static final String nameE = "Reimu";
+	/** れいむベースファイル名 */
+	public static final String baseFileName = "reimu";
+
+	private static BufferedImage[][][][] imagePack = new BufferedImage[YukkuriRank.values().length][][][];
+	private static BufferedImage[][][] imagesKai = new BufferedImage[ImageCode.values().length][2][3];
+	private static BufferedImage[][][] imagesNora = new BufferedImage[ImageCode.values().length][2][3];
+	private static BufferedImage[][][][] imagesNagasi = new BufferedImage[ImageCode
+			.values().length][2][3][ModLoader.getMaxImgOtherVer() + 1];
+	private static int[][] directionOffset = new int[ImageCode.values().length][2];
+	private static int[][] directionOffsetNagasi = new int[ImageCode.values().length][2];
+	private static Dimension4y[] boundary = new Dimension4y[3];
+	private static Dimension4y[] braidBoundary = new Dimension4y[3];
+	private static boolean imageLoaded = false;
+	private static Map<String, Point4y[]> AttachOffset = new HashMap<String, Point4y[]>();
+	// ---
+	// iniファイルから読み込んだ初期値
+	private static int baseSpeed = 100;
+	// 個別表情管理(まりちゃ流し用)
+	private int[][] imageVariantState = new int[ImageCode.values().length][2];
+
+	/** イメージのロード */
+	public static void loadImages(ClassLoader loader, ImageObserver io) throws IOException {
+
+		if (imageLoaded) {
+			return;
+		}
+
+		boolean res;
+		res = ModLoader.loadYukkuriImagePack(loader, imagesNora, directionOffset, ModLoader.getYkWordNora(), baseFileName,
+				io);
+		if (!res) {
+			imagesNora = null;
+		}
+		res = ModLoader.loadYukkuriImagePack(loader, imagesKai, directionOffset, null, baseFileName, io);
+		if (!res) {
+			imagesKai = null;
+		}
+		imagePack[YukkuriRank.KAIYU.getImageIndex()] = imagesKai;
+		if (imagesNora != null) {
+			imagePack[YukkuriRank.NORAYU.getImageIndex()] = imagesNora;
+		} else {
+			imagePack[YukkuriRank.NORAYU.getImageIndex()] = imagesKai;
+		}
+		res = ModLoader.loadYukkuriImagePack(loader, imagesNagasi, directionOffsetNagasi, ModLoader.getYkWordNagasi(),
+				baseFileName, io);
+		if (!res) {
+			imagesNagasi = null;
+		}
+
+		ModLoader.setImageSize(imagesKai, boundary, braidBoundary, io);
+
+		imageLoaded = true;
+	}
+
+	/**
+	 * INIファイルをロードする
+	 * 
+	 * @param loader クラスローダ
+	 */
+	public static void loadIniFile(ClassLoader loader) {
+		AttachOffset = ModLoader.loadYukkuriIniOffsets(loader, ModLoader.getDataIniDir(), baseFileName);
+		baseSpeed = ModLoader.loadYukkuriIniValue(loader, ModLoader.getDataIniDir(), baseFileName, "speed");
+	}
+
+	/** 画像が読み込み済みかを返す。 */
+	@Override
+	@Transient
+	public boolean isImageLoaded() {
+		return imageLoaded;
+	}
+
+	/** 現在の表示状態に基づく画像をレイヤーにセットし、画像番号を返す。 */
+	@Override
+	public int getImage(int type, int direction, YukkuriLayer layer, int index) {
+		if (!isImageNagasiMode() || imagesNagasi == null) {
+			layer.getImage()[index] = imagePack[getRank().getImageIndex()][type][direction
+					* directionOffset[type][0]][getAgeState().ordinal()];
+			layer.getDir()[index] = direction * directionOffset[type][1];
+		} else {
+			// インターバル毎に初期化する
+			if (GameEnvironment.getInterval() == 0 && !isDead()) {
+				for (int i = 0; i < ImageCode.values().length; i++) {
+					imageVariantState[i][1] = 0;
+				}
+			}
+
+			// 前回と同じ表示
+			if (imageVariantState[type][1] == 1) {
+				int imageIndex = imageVariantState[type][0];
+				layer.getImage()[index] = imagesNagasi[type][direction
+						* directionOffsetNagasi[type][0]][getAgeState()
+								.ordinal()][imageIndex];
+
+			} else {
+				int otherVersionCount = 0;
+				for (int i = 0; i < ModLoader.getMaxImgOtherVer(); i++) {
+					if (imagesNagasi[type][direction * directionOffsetNagasi[type][0]][getAgeState().ordinal()][i
+							+ 1] != null) {
+						otherVersionCount++;
+					}
+				}
+
+				if (otherVersionCount != 0) {
+					int randomIndex = GameRandom.nextInt(otherVersionCount + 1);
+					imageVariantState[type][0] = randomIndex;
+					layer.getImage()[index] = imagesNagasi[type][direction
+							* directionOffsetNagasi[type][0]][getAgeState().ordinal()][randomIndex];
+				} else {
+					imageVariantState[type][0] = 0;
+					layer.getImage()[index] = imagesNagasi[type][direction
+							* directionOffsetNagasi[type][0]][getAgeState().ordinal()][0];
+				}
+
+				imageVariantState[type][1] = 1;
+			}
+
+			layer.getDir()[index] = direction * directionOffsetNagasi[type][1];
+		}
+		return 1;
+	}
+
+	/**
+	 * ゆ虐神拳を受けてドス等にトランスフォーム可能かどうかを返却する.
+	 * 実ゆでなければ可能を返却する.
+	 * 
+	 * @return ゆ虐神拳を受けてドス等にトランスフォーム可能かどうか
+	 */
+	@Override
+	public boolean judgeCanTransForGodHand() {
+		if (isUnBirth()) {
+			bodyBurst();
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * ゆ虐神拳を受けでいぶにトランスフォームする。
+	 */
+	@Override
+	public void execTransform() {
+		// でいぶ化
+		TransformationService.transform(this, YukkuriType.DEIBU);
+	}
+
+	/**
+	 * 突然変異チェックをする.
+	 * れいむ→でいぶ.
+	 * 
+	 * @return 突然変異する際のゆっくり
+	 */
+	@Override
+	public Yukkuri checkTransform() {
+		// 自身が突然変異可能かチェック
+		if (!canTransform()) {
+			return null;
+		}
+		// 大人であり、夫がいて夫がゲスではなく、自身がゲス
+		Yukkuri partner = org.simyukkuri.util.YukkuriLookup.getYukkuriById(getPartner());
+		if (isAdult() && partner != null && !partner.isRude() && isRude()) {
+			if (GameRandom.nextInt(1000) == 0) {
+				return this;
+			}
+		}
+		// または、ゲスでいぶの子供である
+		Yukkuri mother = org.simyukkuri.util.YukkuriLookup.getYukkuriById(getMother());
+		if (!isAdult() && mother != null && mother.getType() == Deibu.type && mother.isRude()) {
+			// ゲスバカとドゲスは確実にでいぶ化
+			if ((isRude() && getIntelligence() != Intelligence.FOOL) || getAttitude() == Attitude.SUPER_SHITHEAD) {
+				return this;
+			} else if (GameRandom.nextBoolean()) {
+				// あとは1/2。
+				return this;
+			}
+		}
+		return null;
+	}
+
+	/** アタッチメントキーに対応する取り付け点座標を返す。 */
+	@Override
+	public Point4y[] getMountPoint(String key) {
+		return AttachOffset.get(key);
+	}
+
+	/** ゆっくりの種別を返す。 */
+	@Override
+	@Transient
+	public YukkuriType getType() {
+		return type;
+	}
+
+	/** 交配相手の種別に応じた混血種別を返す。 */
+	@Override
+	@Transient
+	public YukkuriType getHybridType(YukkuriType partnerType) {
+		switch (partnerType) {
+			case MARISA:
+				return YukkuriType.MARISAREIMU;
+			default:
+				return YukkuriType.REIMU;
+		}
+	}
+
+	/** 日本語名を返す。 */
+	@Override
+	@Transient
+	public String getNameJ() {
+		return nameJ;
+	}
+
+	/** 自分の呼び名（愛称優先、なければ種族名）を返す。 */
+	@Override
+	@Transient
+	public String getMyName() {
+		if (getMyNames()[getAgeState().ordinal()] != null) {
+			return getMyNames()[getAgeState().ordinal()];
+		}
+		return nameJ;
+	}
+
+	/** ダメージ時の呼び名（設定あれば優先、なければ通常の呼び名）を返す。 */
+	@Override
+	@Transient
+	public String getMyNameD() {
+		if (getMyNamesDamaged()[getAgeState().ordinal()] != null) {
+			return getMyNamesDamaged()[getAgeState().ordinal()];
+		}
+		return getMyName();
+	}
+
+	/** 英語名を返す。 */
+	@Override
+	@Transient
+	public String getNameE() {
+		return nameE;
+	}
+
+	/** 追加の日本語名（ない場合は空文字）を返す。 */
+	@Override
+	@Transient
+	public String getNameJ2() {
+		return "";
+	}
+
+	/** 追加の英語名（ない場合は空文字）を返す。 */
+	@Override
+	@Transient
+	public String getNameE2() {
+		return "";
+	}
+
+	// 胴体のベースグラフィックを返す
+	// mode[0] 正面向きか横向きか
+	/** 胴体の表示状態に基づく画像インデックスをレイヤーにセットし番号を返す。 */
+	@Override
+	public int getImageIndex(YukkuriLayer layer) {
+		final int direction = this.getDirection().ordinal();
+
+		layer.getOption()[0] = 0;
+		layer.getOption()[1] = 0;
+		layer.getOption()[2] = 0;
+
+		int idx = 0;
+		if (isBurned() && isDead()) {
+			// 焼死体
+			idx += getImage(ImageCode.BURNED.ordinal(), Const.LEFT, layer, idx);
+		} else if (isCrushed()) {
+			// 潰れた死体
+			if (isBurned()) {
+				idx += getImage(ImageCode.BURNED2.ordinal(), Const.LEFT, layer, idx);
+			} else {
+				if (isPealed()) {
+					idx += getImage(ImageCode.CRUSHED3.ordinal(), Const.LEFT, layer, idx);
+				} else if (getOkazaris() != null && getOkazaris().getOkazariType() == OkazariType.DEFAULT) {
+					idx += getImage(ImageCode.CRUSHED.ordinal(), Const.LEFT, layer, idx);
+				} else {
+					idx += getImage(ImageCode.CRUSHED2.ordinal(), Const.LEFT, layer, idx);
+				}
+			}
+		} else if (isPacked()) {
+			if (isDead()) {
+				idx += getImage(ImageCode.PACKED_DEAD.ordinal(), Const.LEFT, layer, idx);
+			} else if (getAge() % 6 <= 2) {
+				idx += getImage(ImageCode.PACKED1.ordinal(), Const.LEFT, layer, idx);
+			} else {
+				idx += getImage(ImageCode.PACKED2.ordinal(), Const.LEFT, layer, idx);
+			}
+		} else if (isShitting() || isBirth() && getBabyTypes().size() > 0 || (isFixBack() && !isFurifuri())) {
+			// 排泄、出産時
+			idx += getImage(ImageCode.FRONT_SHIT.ordinal(), Const.LEFT, layer, idx);
+
+			if (getHairState() == HairState.DEFAULT) {
+				idx += getImage(ImageCode.FRONT_HAIR.ordinal(), Const.LEFT, layer, idx);
+			} else if (getHairState() == HairState.BRINDLED1 || getHairState() == HairState.BRINDLED2) {
+				idx += getImage(ImageCode.FRONT_HAIR2.ordinal(), Const.LEFT, layer, idx);
+			}
+
+			if (isAnalClose()) {
+				idx += getImage(ImageCode.FRONT_SEALED.ordinal(), Const.LEFT, layer, idx);
+			}
+			if (getCriticalDamege() == CriticalDamageType.INJURED) {
+				idx += getImage(ImageCode.FRONT_INJURED.ordinal(), Const.LEFT, layer, idx);
+			}
+			if (isBlind()) {
+				idx += getImage(ImageCode.FRONT_BLIND.ordinal(), Const.LEFT, layer, idx);
+			}
+			if (isHasPants()) {
+				idx += getImage(ImageCode.FRONT_PANTS.ordinal(), Const.LEFT, layer, idx);
+			}
+			if (isHasBraid()) {
+				idx += getImage(ImageCode.FRONT_BRAID.ordinal(), Const.LEFT, layer, idx);
+			}
+			if (getOkazaris() != null && getOkazaris().getOkazariType() == OkazariType.DEFAULT) {
+				idx += getImage(ImageCode.ROLL_ACCESSORY.ordinal(), Const.LEFT, layer, idx);
+			}
+		} else if (isFurifuri() && !isSleeping() && (!isLockmove() || isFixBack())) {
+			// ふりふり
+			if (getAge() % 8 <= 3) {
+				idx += getImage(ImageCode.ROLL_LEFT_SHIT.ordinal(), Const.LEFT, layer, idx);
+
+				if (getHairState() == HairState.DEFAULT) {
+					idx += getImage(ImageCode.ROLL_LEFT_HAIR.ordinal(), Const.LEFT, layer, idx);
+				} else if (getHairState() == HairState.BRINDLED1 || getHairState() == HairState.BRINDLED2) {
+					idx += getImage(ImageCode.FRONT_HAIR2.ordinal(), Const.LEFT, layer, idx);
+				}
+
+				if (isAnalClose()) {
+					idx += getImage(ImageCode.ROLL_LEFT_SEALED.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (getCriticalDamege() == CriticalDamageType.INJURED) {
+					idx += getImage(ImageCode.ROLL_LEFT_INJURED.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (isBlind()) {
+					idx += getImage(ImageCode.ROLL_LEFT_BLIND.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (isHasPants()) {
+					idx += getImage(ImageCode.ROLL_LEFT_PANTS.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (isHasBraid()) {
+					idx += getImage(ImageCode.ROLL_LEFT_BRAID.ordinal(), Const.LEFT, layer, idx);
+				}
+
+			} else if (getAge() % 8 <= 7) {
+				idx += getImage(ImageCode.ROLL_RIGHT_SHIT.ordinal(), Const.LEFT, layer, idx);
+
+				if (getHairState() == HairState.DEFAULT) {
+					idx += getImage(ImageCode.ROLL_RIGHT_HAIR.ordinal(), Const.LEFT, layer, idx);
+				} else if (getHairState() == HairState.BRINDLED1 || getHairState() == HairState.BRINDLED2) {
+					idx += getImage(ImageCode.FRONT_HAIR2.ordinal(), Const.LEFT, layer, idx);
+				}
+
+				if (isAnalClose()) {
+					idx += getImage(ImageCode.ROLL_RIGHT_SEALED.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (getCriticalDamege() == CriticalDamageType.INJURED) {
+					idx += getImage(ImageCode.ROLL_RIGHT_INJURED.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (isBlind()) {
+					idx += getImage(ImageCode.ROLL_RIGHT_BLIND.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (isHasPants()) {
+					idx += getImage(ImageCode.ROLL_RIGHT_PANTS.ordinal(), Const.LEFT, layer, idx);
+				}
+				if (isHasBraid()) {
+					idx += getImage(ImageCode.ROLL_RIGHT_BRAID.ordinal(), Const.LEFT, layer, idx);
+				}
+			}
+			if (getOkazaris() != null && getOkazaris().getOkazariType() == OkazariType.DEFAULT) {
+				idx += getImage(ImageCode.ROLL_ACCESSORY.ordinal(), Const.LEFT, layer, idx);
+			}
+		} else if (isYunnyaa()) {
+			// れいむ種専用
+			// ゆんやあ
+			/* if(getImageNagasiMode()) */ {
+				if (getAge() % 6 <= 1) {
+					idx += getImage(ImageCode.YUNYAA1.ordinal(), direction, layer, idx);
+
+					if (getOkazaris() != null && getOkazaris().getOkazariType() == OkazariType.DEFAULT) {
+						idx += getImage(ImageCode.YUNYAA1_ACCESSORY.ordinal(), direction, layer, idx);
+					}
+					if (getHairState() == HairState.DEFAULT) {
+						idx += getImage(ImageCode.YUNYAA1_HAIR.ordinal(), direction, layer, idx);
+					} else if (getHairState() == HairState.BRINDLED1 || getHairState() == HairState.BRINDLED2) {
+						idx += getImage(ImageCode.YUNYAA1_HAIR2.ordinal(), direction, layer, idx);
+					}
+					if (getCriticalDamege() == CriticalDamageType.INJURED) {
+						idx += getImage(ImageCode.YUNYAA1_INJURED.ordinal(), direction, layer, idx);
+					}
+					if (isBlind()) {
+						idx += getImage(ImageCode.YUNYAA1_BLIND.ordinal(), direction, layer, idx);
+					}
+					if (isHasPants()) {
+						idx += getImage(ImageCode.YUNYAA1_PANTS.ordinal(), direction, layer, idx);
+					}
+					if (isDirty()) {
+						idx += getImage(ImageCode.YUNYAA1_DIRTY.ordinal(), direction, layer, idx);
+					}
+					if (isHasBraid()) {
+						idx += getImage(ImageCode.YUNYAA1_BRAID.ordinal(), direction, layer, idx);
+					}
+					if (!isHasBraid()) {
+						idx += getImage(ImageCode.YUNYAA1_CUTBRAID.ordinal(), direction, layer, idx);
+					}
+				} else if (getAge() % 6 == 2 || getAge() % 6 == 5) {
+					idx += getImage(ImageCode.YUNYAA2.ordinal(), direction, layer, idx);
+
+					if (getOkazaris() != null && getOkazaris().getOkazariType() == OkazariType.DEFAULT) {
+						idx += getImage(ImageCode.YUNYAA2_ACCESSORY.ordinal(), direction, layer, idx);
+					}
+					if (getHairState() == HairState.DEFAULT) {
+						idx += getImage(ImageCode.YUNYAA2_HAIR.ordinal(), direction, layer, idx);
+					} else if (getHairState() == HairState.BRINDLED1 || getHairState() == HairState.BRINDLED2) {
+						idx += getImage(ImageCode.YUNYAA2_HAIR2.ordinal(), direction, layer, idx);
+					}
+					if (getCriticalDamege() == CriticalDamageType.INJURED) {
+						idx += getImage(ImageCode.YUNYAA2_INJURED.ordinal(), direction, layer, idx);
+					}
+					if (isBlind()) {
+						idx += getImage(ImageCode.YUNYAA2_BLIND.ordinal(), direction, layer, idx);
+					}
+					if (isHasPants()) {
+						idx += getImage(ImageCode.YUNYAA2_PANTS.ordinal(), direction, layer, idx);
+					}
+					if (isDirty()) {
+						idx += getImage(ImageCode.YUNYAA2_DIRTY.ordinal(), direction, layer, idx);
+					}
+					if (isHasBraid()) {
+						idx += getImage(ImageCode.YUNYAA2_BRAID.ordinal(), direction, layer, idx);
+					}
+					if (!isHasBraid()) {
+						idx += getImage(ImageCode.YUNYAA2_CUTBRAID.ordinal(), direction, layer, idx);
+					}
+				} else /* if (getAge() % 6 <= 3) */ {
+					idx += getImage(ImageCode.YUNYAA3.ordinal(), direction, layer, idx);
+
+					if (getOkazaris() != null && getOkazaris().getOkazariType() == OkazariType.DEFAULT) {
+						idx += getImage(ImageCode.YUNYAA3_ACCESSORY.ordinal(), direction, layer, idx);
+					}
+					if (getHairState() == HairState.DEFAULT) {
+						idx += getImage(ImageCode.YUNYAA3_HAIR.ordinal(), direction, layer, idx);
+					} else if (getHairState() == HairState.BRINDLED1 || getHairState() == HairState.BRINDLED2) {
+						idx += getImage(ImageCode.YUNYAA3_HAIR3.ordinal(), direction, layer, idx);
+					}
+					if (getCriticalDamege() == CriticalDamageType.INJURED) {
+						idx += getImage(ImageCode.YUNYAA3_INJURED.ordinal(), direction, layer, idx);
+					}
+					if (isBlind()) {
+						idx += getImage(ImageCode.YUNYAA3_BLIND.ordinal(), direction, layer, idx);
+					}
+					if (isHasPants()) {
+						idx += getImage(ImageCode.YUNYAA3_PANTS.ordinal(), direction, layer, idx);
+					}
+					if (isDirty()) {
+						idx += getImage(ImageCode.YUNYAA3_DIRTY.ordinal(), direction, layer, idx);
+					}
+					if (isHasBraid()) {
+						idx += getImage(ImageCode.YUNYAA3_BRAID.ordinal(), direction, layer, idx);
+					}
+					if (!isHasBraid()) {
+						idx += getImage(ImageCode.YUNYAA3_CUTBRAID.ordinal(), direction, layer, idx);
+					}
+				}
+			}
+		} else {
+			// 皮むき時
+			if (isPealed()) {
+				idx += getImage(ImageCode.PEALED.ordinal(), direction, layer, idx);
+			} else {
+				// 通常時
+				idx += getImage(ImageCode.BODY.ordinal(), direction, layer, idx);
+			}
+			layer.getOption()[0] = 1;
+		}
+		return idx;
+	}
+
+	// ゆっくりしてる時のアクション
+	/** Kill time. 個別の動作がある種ははこれをオーバーライドしているので注意 */
+	@Override
+	public void killTime() {
+		if (getCurrentEvent() != null) {
+			return;
+		}
+		if (getPlaying() != null) {
+			return;
+		}
+		int p = GameRandom.nextInt(50);
+		// 7/50でキリッ
+		if (p <= 6) {
+			getInVain(true);
+		} else if (p <= 14) {
+			// 7/50でのびのび (if yukkuri is not rude, she goes into her shell by discipline)
+			setMessage(GameMessages.getMessage(this, MessagePool.Action.Nobinobi), 40);
+			setNobinobi(true);
+			addStress(-30);
+			stay(40);
+		} else if (p <= 21) {
+			// 7/50でおうた
+			setMessage(GameMessages.getMessage(this, MessagePool.Action.ProudChildsSING), 40);
+			setNobinobi(true);
+			addStress(-30);
+			stay(40);
+		} else if (p <= 28 && willingFurifuri()) {
+			// 7/50でふりふり (if yukkuri is rude, she will not do furifuri by discipline)
+			setMessage(GameMessages.getMessage(this, MessagePool.Action.FuriFuri), 30);
+			setFurifuri(true);
+			addStress(-50);
+			stay(30);
+		} else if ((p <= 35 && isHungry()) || isSoHungry()) {
+			// 7/50でふりふりで腹減った (空腹時)
+			setMessage(GameMessages.getMessage(this, MessagePool.Action.Hungry), 30);
+			stay(30);
+		} else if (p <= 39) {
+			// 4/50でおもちゃで遊ぶ
+			if (ToyLogic.checkToy(this)) {
+				setPlaying(PlayStyle.BALL);
+				playingLimit = 150 + GameRandom.nextInt(100) - 49;
+				return;
+			} else {
+				killTime();
+			}
+		} else if (p <= 42) {
+			// 3/50でトランポリンで遊ぶ
+			if (ToyLogic.checkTrampoline(this)) {
+				setPlaying(PlayStyle.TRAMPOLINE);
+				playingLimit = 150 + GameRandom.nextInt(100) - 49;
+				return;
+			} else {
+				killTime();
+			}
+		} else if (p <= 43) {
+			// 1/50ですいーで遊ぶ
+			if (ToyLogic.checkSui(this)) {
+				setPlaying(PlayStyle.SUI);
+				playingLimit = 150 + GameRandom.nextInt(100) - 49;
+				return;
+			} else {
+				killTime();
+			}
+		} else {
+			// おくるみありで汚れていない場合
+			if (isHasPants() && !isDirty() && GameRandom.nextInt(5) == 0) {
+				setMessage(GameMessages.getMessage(this, MessagePool.Action.RelaxOkurumi));
+			} else {
+				setMessage(GameMessages.getMessage(this, MessagePool.Action.Relax));
+			}
+			addStress(-50);
+			stay(30);
+		}
+	}
+
+	/** コンストラクタ */
+	public Reimu(int initX, int initY, int initZ, AgeState initAgeState, Yukkuri p1, Yukkuri p2) {
+		super(initX, initY, initZ, initAgeState, p1, p2);
+		setBoundary(boundary, braidBoundary);
+		setMsgType(YukkuriType.REIMU);
+		setShitType(YukkuriType.REIMU);
+		setBaseYukkuriFileName(baseFileName);
+		IniFileUtil.readYukkuriIniFile(this);
+	}
+
+	/** れいむ のデフォルトコンストラクタ。 */
+	public Reimu() {
+
+	}
+
+	@Override
+	public void reinitializeBoundary() {
+		setBoundary(boundary, braidBoundary);
+	}
+
+	/** Tune parameters. */
+	@Override
+	public void tuneParameters() {
+		/*
+		 * if (GameRandom.nextBoolean()) {
+		 * motherhood = true;
+		 * }
+		 */
+		double factor = Math.random() * 2 + 1;
+		getHungryLimitBase()[AgeState.ADULT.ordinal()] = (int) (getHungryLimitBase()[AgeState.ADULT.ordinal()] * factor);
+		getHungryLimitBase()[AgeState.CHILD.ordinal()] = (int) (getHungryLimitBase()[AgeState.CHILD.ordinal()] * factor);
+		getHungryLimitBase()[AgeState.BABY.ordinal()] = (int) (getHungryLimitBase()[AgeState.BABY.ordinal()] * factor);
+		factor = Math.random() * 2 + 1;
+		getShitLimitBase()[AgeState.ADULT.ordinal()] = (int) (getShitLimitBase()[AgeState.ADULT.ordinal()] * factor);
+		getShitLimitBase()[AgeState.CHILD.ordinal()] = (int) (getShitLimitBase()[AgeState.CHILD.ordinal()] * factor);
+		getShitLimitBase()[AgeState.BABY.ordinal()] = (int) (getShitLimitBase()[AgeState.BABY.ordinal()] * factor);
+		factor = Math.random() + 0.5;
+		getDamageLimitBase()[AgeState.ADULT.ordinal()] = (int) (getDamageLimitBase()[AgeState.ADULT.ordinal()] * factor);
+		getDamageLimitBase()[AgeState.CHILD.ordinal()] = (int) (getDamageLimitBase()[AgeState.CHILD.ordinal()] * factor);
+		getDamageLimitBase()[AgeState.BABY.ordinal()] = (int) (getDamageLimitBase()[AgeState.BABY.ordinal()] * factor);
+		factor = Math.random() + 0.5;
+		setBabyLimitBase((int) (getBabyLimitBase() * factor));
+		setChildLimitBase((int) (getChildLimitBase() * factor));
+		setLifeLimitBase((int) (getLifeLimitBase() * factor));
+		factor = Math.random() + 1;
+		setRelaxPeriodBase((int) (getRelaxPeriodBase() * factor));
+		setExcitePeriodBase((int) (getExcitePeriodBase() * factor));
+		setPregPeriodBase((int) (getPregPeriodBase() * factor));
+		setSleepPeriodBase((int) (getSleepPeriodBase() * factor));
+		setActivePeriodBase((int) (getActivePeriodBase() * factor));
+		setSameDirectionFactor(GameRandom.nextInt(20) + 20);
+		setDeclinePeriodBase((int) (getDeclinePeriodBase() * (Math.random() + 0.5)));
+		setImmunityStrength(GameRandom.nextInt(10) + 1);
+		// EYESIGHT /= 4;
+		factor = Math.random() + 0.5;
+		getStrengthBase()[AgeState.ADULT.ordinal()] = (int) (getStrengthBase()[AgeState.ADULT.ordinal()] * factor);
+		getStrengthBase()[AgeState.CHILD.ordinal()] = (int) (getStrengthBase()[AgeState.CHILD.ordinal()] * factor);
+		getStrengthBase()[AgeState.BABY.ordinal()] = (int) (getStrengthBase()[AgeState.BABY.ordinal()] * factor);
+
+		// speed = 120;
+		speed = baseSpeed;
+	}
+
+	/** 流し絵モード用の画像バリアント状態を返す。 */
+	public int[][] getImageVariantState() {
+		return imageVariantState;
+	}
+
+	/** 流し絵モード用の画像バリアント状態をセットする。 */
+	public void setImageVariantState(int[][] imageVariantState) {
+		this.imageVariantState = imageVariantState;
+	}
+
+}

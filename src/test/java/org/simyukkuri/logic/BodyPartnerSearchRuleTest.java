@@ -1,0 +1,124 @@
+package org.simyukkuri.logic;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.simyukkuri.SimYukkuri;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.entity.core.living.yukkuri.impl.Marisa;
+import org.simyukkuri.entity.core.living.yukkuri.impl.Remirya;
+import org.simyukkuri.entity.core.living.yukkuri.impl.Sakuya;
+import org.simyukkuri.enums.Attitude;
+import org.simyukkuri.util.GameRandom;
+import org.simyukkuri.util.WorldTestHelper;
+
+/**
+ * Tests for YukkuriPartnerSearchRule.
+ */
+class BodyPartnerSearchRuleTest {
+
+	@BeforeEach
+	void setUp() {
+		WorldTestHelper.initializeMinimalWorld();
+		WorldTestHelper.initializeStandardTranslate200();
+	}
+
+	@AfterEach
+	void tearDown() {
+		GameRandom.clearOverride();
+		WorldTestHelper.resetWorld();
+	}
+
+	@Test
+	void testSelectTargets_prefersPheromoneBodyOverCloserNonPheromone() {
+		Yukkuri me = WorldTestHelper.createBody();
+		me.setX(40);
+		me.setY(40);
+		me.setOkazaris(null);
+		me.setAttitude(Attitude.SUPER_SHITHEAD);
+
+		Yukkuri closer = WorldTestHelper.createBody();
+		closer.setX(50);
+		closer.setY(40);
+		closer.setOkazaris(null);
+
+		Yukkuri pheromone = WorldTestHelper.createBody();
+		pheromone.setX(70);
+		pheromone.setY(40);
+		pheromone.setPheromone(true);
+
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(me.getUniqueId(), me);
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(closer.getUniqueId(), closer);
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(pheromone.getUniqueId(), pheromone);
+
+		YukkuriPartnerSearchRule.SearchResult result = YukkuriPartnerSearchRule.selectTargets(me, null,
+				me.getEyesightBase(),
+				me.getEyesightBase());
+		assertNotNull(result);
+		assertEquals(pheromone, result.getTargetBody(),
+				"フェロモン持ちが優先して選択されること");
+		assertNotEquals(closer, result.getTargetBody(),
+				"より近い non-pheromone 相手は選択されないこと");
+	}
+
+	@Test
+	void testSelectTargets_reportsOkazariCandidateForRudeBody() {
+		Yukkuri me = WorldTestHelper.createBody();
+		me.setX(40);
+		me.setY(40);
+		me.setOkazaris(null);
+		me.setAttitude(Attitude.SUPER_SHITHEAD);
+
+		Yukkuri target = WorldTestHelper.createBody();
+		target.setX(50);
+		target.setY(40);
+
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(me.getUniqueId(), me);
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(target.getUniqueId(), target);
+
+		YukkuriPartnerSearchRule.SearchResult result = YukkuriPartnerSearchRule.selectTargets(me, null,
+				me.getEyesightBase(),
+				me.getEyesightBase());
+		assertNotNull(result);
+		assertEquals(target, result.getTargetHasOkazari(),
+				"ゲスは okazari 持ちの相手を候補として記録すること");
+		assertNotEquals(me, result.getTargetHasOkazari(),
+				"自身は okazari 候補に選ばれないこと");
+	}
+
+	@Test
+	void testSelectTargets_skipsPredatorWhenActorIsPredatorServant() {
+		Sakuya me = new Sakuya();
+		me.setX(40);
+		me.setY(40);
+		me.setOkazaris(null);
+		me.setAttitude(Attitude.SUPER_SHITHEAD);
+
+		Remirya predator = new Remirya();
+		predator.setX(50);
+		predator.setY(40);
+		predator.setOkazaris(null);
+
+		Marisa normal = new Marisa();
+		normal.setX(140);
+		normal.setY(40);
+		normal.setOkazaris(null);
+
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(me.getUniqueId(), me);
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(predator.getUniqueId(), predator);
+		SimYukkuri.world.getCurrentWorldState().getYukkuriRegistry().put(normal.getUniqueId(), normal);
+
+		YukkuriPartnerSearchRule.SearchResult result = YukkuriPartnerSearchRule.selectTargets(me, null,
+				me.getEyesightBase(),
+				me.getEyesightBase());
+		assertNotNull(result);
+		assertEquals(normal, result.getTargetBody(),
+				"捕食者の従者は通常ゆっくりを選択すること");
+		assertNotEquals(predator, result.getTargetBody(),
+				"捕食者の従者は捕食者をスキップすること");
+	}
+}

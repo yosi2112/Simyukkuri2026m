@@ -1,0 +1,842 @@
+package org.simyukkuri.draw;
+
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridLayout;
+import java.awt.RenderingHints;
+import java.awt.Stroke;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
+import java.awt.font.FontRenderContext;
+import java.awt.font.LineBreakMeasurer;
+import java.awt.font.TextAttribute;
+import java.awt.font.TextLayout;
+import java.awt.geom.Ellipse2D;
+import java.awt.image.BufferedImage;
+import java.text.AttributedCharacterIterator;
+import java.text.AttributedString;
+import java.util.LinkedList;
+import java.util.List;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import org.simyukkuri.SimYukkuri;
+import org.simyukkuri.engine.GameLoop;
+import org.simyukkuri.engine.ImageLoadService;
+import org.simyukkuri.engine.Terrarium;
+import org.simyukkuri.entity.core.Entity;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.enums.AgeState;
+import org.simyukkuri.enums.YukkuriRank;
+import org.simyukkuri.enums.YukkuriType;
+import org.simyukkuri.system.Cash;
+import org.simyukkuri.system.FrameRate;
+import org.simyukkuri.system.Sprite;
+import org.simyukkuri.util.GameLocale;
+import org.simyukkuri.util.GameRandom;
+import org.simyukkuri.util.GameText;
+import org.simyukkuri.util.GameWorld;
+
+/**
+ * SimYukuri.javaの補完
+ * <br>
+ * 画像の読み込みや描画関連、スレッドを走らせることをメインにやっている模様
+ *
+ */
+public class MyPane extends JPanel implements Runnable {
+
+	private static final long serialVersionUID = 3984934418500303781L;
+	/** メッセージボックスの位置行当たりの文字数 */
+	static final int MSG_BOX_CHAR_NUM = 13;
+	/** スレッドが走っているか否か */
+	private boolean isRunning = false;
+	/** ゲーム内環境 */
+	private Terrarium terrarium = new Terrarium();
+
+	/** 背景用バッファ */
+	private BufferedImage backBuffer = null;
+	/** 背景用画像 */
+	private Graphics2D backBufferG2 = null;
+
+	/** 描画用テンポラリ */
+	private List<Object> renderQueue = new LinkedList<Object>();
+	private List<Yukkuri> messageBodies = new LinkedList<Yukkuri>();
+	private int[] posTmp = new int[10];
+	private BufferedImage[] layerTmp = new BufferedImage[10];
+	/** 拡大表示倍率 */
+	private Object renderScale;
+
+	static boolean showLog = false;
+	/* フレームレート */
+	static FrameRate fps = new FrameRate();
+	/**
+	 * ゲームスピードの定義
+	 * <br>
+	 * 順に、停止、1倍、2倍、4倍、10倍、最速
+	 */
+	public static final int PAUSE = -1;
+	public static final int MAX = 1;
+	public static final int DECUPLE = 10;
+	public static final int QUINTUPLE = 20;
+	public static final int DOUBLE = 50;
+	public static final int NORMAL = 100;
+	/** スピードの値管理 */
+	public static final int[] gameSpeed = { PAUSE, NORMAL, DOUBLE, QUINTUPLE, DECUPLE, MAX };
+
+	/** ゆっくり追加ウィンドウ用コンボボックス群 */
+	@SuppressWarnings("rawtypes")
+	static JComboBox cb1;
+	/** ゆっくり追加ウィンドウ用コンボボックス群 */
+	@SuppressWarnings("rawtypes")
+	static JComboBox cb2;
+	/** ゆっくり追加ウィンドウ用コンボボックス群 */
+	@SuppressWarnings("rawtypes")
+	static JComboBox cb3;
+	/** ゆっくり追加ウィンドウ用コンボボックス群 */
+	@SuppressWarnings("rawtypes")
+	static JComboBox cb4;
+	/** ゆっくり追加ウィンドウ用コンボボックス群 */
+	@SuppressWarnings("rawtypes")
+	static JComboBox cb5;
+	static JCheckBox cb6;
+	/** ゆっくり追加ウィンドウ用チェックボックス群 */
+	static final String[] namesCommonJ = { YukkuriType.MARISA.getJapaneseName(),
+			YukkuriType.REIMU.getJapaneseName(), YukkuriType.ALICE.getJapaneseName(),
+			YukkuriType.PATCH.getJapaneseName(), YukkuriType.CHEN.getJapaneseName(),
+			YukkuriType.MYON.getJapaneseName() };
+	/** ゆっくり追加ウィンドウ用チェックボックス群(英語) */
+	static final String[] namesCommonE = { YukkuriType.MARISA.getEnglishName(),
+			YukkuriType.REIMU.getEnglishName(), YukkuriType.ALICE.getEnglishName(),
+			YukkuriType.PATCH.getEnglishName(), YukkuriType.CHEN.getEnglishName(),
+			YukkuriType.MYON.getEnglishName() };
+	/** ゆっくり追加ウィンドウの、希少種用名前欄 */
+	static final String[] namesRareJ = { YukkuriType.YURUSANAE.getJapaneseName(), YukkuriType.AYAYA.getJapaneseName(),
+			YukkuriType.TENKO.getJapaneseName(), YukkuriType.UDONGE.getJapaneseName(),
+			YukkuriType.MEIRIN.getJapaneseName(), YukkuriType.SUWAKO.getJapaneseName(),
+			YukkuriType.CHIRUNO.getJapaneseName(), YukkuriType.EIKI.getJapaneseName(),
+			YukkuriType.RAN.getJapaneseName(), YukkuriType.NITORI.getJapaneseName(),
+			YukkuriType.YUUKA.getJapaneseName(), YukkuriType.SAKUYA.getJapaneseName() };
+	/** ゆっくり追加ウィンドウの、希少種用名前欄（英語） */
+	static final String[] namesRareE = { YukkuriType.YURUSANAE.getEnglishName(), YukkuriType.AYAYA.getEnglishName(),
+			YukkuriType.TENKO.getEnglishName(), YukkuriType.UDONGE.getEnglishName(),
+			YukkuriType.MEIRIN.getEnglishName(), YukkuriType.SUWAKO.getEnglishName(),
+			YukkuriType.CHIRUNO.getEnglishName(), YukkuriType.EIKI.getEnglishName(),
+			YukkuriType.RAN.getEnglishName(), YukkuriType.NITORI.getEnglishName(),
+			YukkuriType.YUUKA.getEnglishName(), YukkuriType.SAKUYA.getEnglishName() };
+	/** ゆっくり追加ウィンドウの、捕食種用名前欄 */
+	static final String[] namesPredatorJ = { YukkuriType.REMIRYA.getJapaneseName(),
+			YukkuriType.FRAN.getJapaneseName(), YukkuriType.YUYUKO.getJapaneseName() };
+	/** ゆっくり追加ウィンドウの、捕食種用名前欄(英語) */
+	static final String[] namesPredatorE = { YukkuriType.REMIRYA.getEnglishName(),
+			YukkuriType.FRAN.getEnglishName(), YukkuriType.YUYUKO.getEnglishName() };
+
+	/** 描画設定フラグ群 */
+	private static boolean isDisableScript = false;
+	private static boolean isEnableTarget = false;
+	private static boolean isDisableHelp = false;
+	/** カーソルで選択されているゆっくり */
+	private static Yukkuri selectBody = null;
+
+	/**
+	 * 通常速度値（100）を返す。
+	 *
+	 * @return 通常速度値
+	 */
+	public static int getNormalSpeed() {
+		return NORMAL;
+	}
+
+	/**
+	 * ゲーム速度段階配列を返す。
+	 *
+	 * @return ゲーム速度段階配列
+	 */
+	public static int[] getGameSpeed() {
+		return gameSpeed;
+	}
+
+	/**
+	 * スクリプト無効フラグを返す。
+	 *
+	 * @return スクリプト無効なら true
+	 */
+	public static boolean isDisableScript() {
+		return isDisableScript;
+	}
+
+	/**
+	 * スクリプト無効フラグをセットする。
+	 *
+	 * @param disableScript true でスクリプト無効
+	 */
+	public static void setDisableScript(boolean disableScript) {
+		isDisableScript = disableScript;
+	}
+
+	/**
+	 * ターゲット表示有効フラグを返す。
+	 *
+	 * @return ターゲット表示が有効なら true
+	 */
+	public static boolean isEnableTarget() {
+		return isEnableTarget;
+	}
+
+	/**
+	 * ターゲット表示有効フラグをセットする。
+	 *
+	 * @param enableTarget true でターゲット表示有効
+	 */
+	public static void setEnableTarget(boolean enableTarget) {
+		isEnableTarget = enableTarget;
+	}
+
+	/**
+	 * ヘルプ表示無効フラグを返す。
+	 *
+	 * @return ヘルプ表示が無効なら true
+	 */
+	public static boolean isDisableHelp() {
+		return isDisableHelp;
+	}
+
+	/**
+	 * ヘルプ表示無効フラグをセットする。
+	 *
+	 * @param disableHelp true でヘルプ表示無効
+	 */
+	public static void setDisableHelp(boolean disableHelp) {
+		isDisableHelp = disableHelp;
+	}
+
+	/**
+	 * カーソルで選択中のゆっくりを返す。
+	 *
+	 * @return 選択中のゆっくり（未選択なら null）
+	 */
+	public static Yukkuri getSelectedYukkuri() {
+		return selectBody;
+	}
+
+	/**
+	 * 選択ゆっくりをセットする。
+	 *
+	 * @param body 選択するゆっくり
+	 */
+	public static void setSelectedYukkuri(Yukkuri body) {
+		selectBody = body;
+	}
+
+	/** カーソル描画用長方形 */
+	static List<Rectangle4y> markList = new LinkedList<Rectangle4y>();
+
+	/** 標準のライン定数 */
+	private static final Stroke DEFAULT_STROKE = new BasicStroke(1.0f);
+	/** 標準フォント */
+	private static final Font DEFAULT_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 12);
+	/** ねぎぃメッセージ用フォント */
+	private static final Font NEGI_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 120);
+
+	// アイテムカーソル
+	private static final Stroke ITEM_CUR_STROKE = new BasicStroke(3.0f);
+	private static final Color ITEM_CUR_COLOR = new Color(0, 0, 0);
+	private static final Ellipse2D.Float ITEM_CUR_SHAPE = new Ellipse2D.Float(-16, -16, 32, 32);
+
+	/** 計算テンポラリ */
+	private static Point4y tmpPoint = new Point4y();
+	/** 画像描画用の標準汎用長方形 */
+	private static Rectangle4y tmpRect = new Rectangle4y();
+
+	// ini設定
+	/** ログダイアログへの出力有無 */
+	private static int logOutput = 1;
+	/** 赤ゆサイズのうんうんの影描写の有無 */
+	private static int drawShadowShitBaby = 1;
+	/** 赤ゆサイズの吐餡の影描写の有無 */
+	private static int drawShadowVomitBaby = 1;
+
+	/**
+	 * 全画像の読み込み
+	 * 
+	 * @param isBg     背景を読み込むか否か
+	 * @param isItem   アイテム画像を読み込むか否か
+	 * @param isEffect エフェクト画像を読み込むか否か
+	 * @param isBody   ゆっくり(通常種のみ)を読み込むか否か
+	 * @param isAttach アタッチメント一式を読み込むか否か
+	 * @param isIni    iniファイルの読み込み
+	 */
+	public void loadImage(boolean isBg, boolean isItem, boolean isEffect, boolean isBody, boolean isAttach,
+			boolean isIni) {
+		ImageLoadService.loadImages(this, isBg, isItem, isEffect, isBody, isAttach, isIni);
+	}
+
+	/**
+	 * ゆっくり用遅延読み込み
+	 *
+	 * @param type 読み込むゆっくりの種
+	 */
+	public void loadYukkuriImage(YukkuriType type) {
+		ImageLoadService.loadYukkuriImage(this, type);
+	}
+
+	/** 背景ファイルリロード */
+	public void loadTerrainFile() {
+		ClassLoader loader = this.getClass().getClassLoader();
+		TerrainField.loadTerrain(GameWorld.get().getNextWorldStateIndex(), loader, this);
+		System.gc();
+	}
+
+	/**
+	 * ズーム時の中心の表示倍率
+	 * 
+	 * @param hint オブジェクト
+	 */
+	public void setRenderScale(Object hint) {
+		renderScale = hint;
+	}
+
+	/**
+	 * 背景画像用バッファ作成
+	 *
+	 */
+	public void createBackBuffer() {
+		backBuffer = new BufferedImage(Translate.getBufferW(), Translate.getBufferH(), BufferedImage.TYPE_3BYTE_BGR);
+		backBufferG2 = backBuffer.createGraphics();
+		backBufferG2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_SPEED);
+	}
+
+	BufferedImage getBackBufferImage() {
+		return backBuffer;
+	}
+
+	public Graphics2D getBackBufferG2() {
+		return backBufferG2;
+	}
+
+	/**
+	 * ゲームループを起動する。{@link GameLoop} に処理を委譲する。
+	 */
+	@Override
+	public void run() {
+		new GameLoop(this).run();
+	}
+
+	ClassLoader getImageLoader() {
+		return ImageLoadService.getImageLoader(this);
+	}
+
+	/** ゆっくり追加用クラス */
+	public class MyAddYukkuriListener implements ItemListener, ActionListener {
+		/**
+		 * ゆっくり追加ダイアログのコンボボックス選択変更時に呼ばれる。種別（レア・捕食）切替でリストを更新する。
+		 *
+		 * @param e ItemEvent
+		 */
+		@SuppressWarnings({ "unchecked", "rawtypes" })
+		public void itemStateChanged(ItemEvent e) {
+			boolean isJp = GameLocale.isJapanese();
+			if (e.getStateChange() == ItemEvent.SELECTED) {
+				if (e.getSource() == cb3) {
+					if (cb3.getSelectedIndex() == 0) {
+						String[] namesCommon = isJp ? namesCommonJ : namesCommonE;
+						cb1.setModel(new DefaultComboBoxModel(namesCommon));
+					} else if (cb3.getSelectedIndex() == 1) {
+						String[] namesRare = isJp ? namesRareJ : namesRareE;
+						cb1.setModel(new DefaultComboBoxModel(namesRare));
+					} else {
+						String[] namesPredator = isJp ? namesPredatorJ : namesPredatorE;
+						cb1.setModel(new DefaultComboBoxModel(namesPredator));
+					}
+				} else if (e.getSource() == cb4) {
+					if (cb4.getSelectedIndex() == 0) {
+						cb1.setEnabled(true);
+						cb2.setEnabled(true);
+						cb3.setEnabled(true);
+					} else {
+						cb1.setEnabled(false);
+						cb2.setEnabled(false);
+						cb3.setEnabled(false);
+					}
+				}
+			}
+		}
+
+		/**
+		 * 個数入力コンボボックスのアクション時に呼ばれる。数値以外が入力された場合は 1 に丸める。
+		 *
+		 * @param e ActionEvent
+		 */
+		@Override
+		public void actionPerformed(ActionEvent e) {
+			if (e.getSource() == cb5) {
+				String str = cb5.getSelectedItem().toString();
+				int num;
+				try {
+					num = Integer.parseInt(str);
+				} catch (NumberFormatException ne) {
+					num = 1;
+				}
+				cb5.setSelectedItem(String.valueOf(num));
+			}
+		}
+	}
+
+	/** ゆっくり追加ダイアログを開く. */
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public void initBodies() {
+		final List<Yukkuri> bodies = new LinkedList<Yukkuri>();
+		final String[] options = { GameText.read("yes"), GameText.read("no") };
+		final String[] ages = { GameText.read("draw_baby"),
+				GameText.read("draw_child"), GameText.read("draw_adult") };
+		final String[] rare = { GameText.read("draw_normalsp"),
+				GameText.read("draw_raresp"), GameText.read("draw_predsp") };
+		final String[] mode = { GameText.read("off"), GameText.read("draw_normalsp"),
+				GameText.read("draw_raresp"), GameText.read("draw_normraresp") };
+		final String[] num = { "1", "2", "3", "4", "5", "10", "50", "100" };
+		final String mess1 = GameText.read("draw_addmes");
+		final String mess2 = GameText.read("draw_addmore");
+		final String mess3 = GameText.read("draw_randommode");
+		final String mess4 = GameText.read("draw_addnum");
+		final String mess5 = GameText.read("draw_raperize");
+		final int babyIndex = 0;
+		final int childIndex = 1;
+		final int adultIndex = 2;
+		final MyAddYukkuriListener addYukkuriListener = new MyAddYukkuriListener();
+
+		for (int choice = 0; choice == 0;) {
+			final JPanel panel = new JPanel();
+			final JPanel panel2 = new JPanel();
+			final JPanel panel3 = new JPanel();
+			final JPanel panel4 = new JPanel();
+			cb1 = new JComboBox();
+			cb2 = new JComboBox(ages);
+			cb2.setSelectedIndex(2);
+			panel2.add(cb2);
+			cb3 = new JComboBox(rare);
+			cb3.setSelectedIndex(0);
+			panel2.add(cb3);
+			cb3.addItemListener(addYukkuriListener);
+			cb1 = new JComboBox();
+			if (cb3.getSelectedIndex() == 0) {
+				cb1.setModel(new DefaultComboBoxModel(GameLocale.isJapanese() ? namesCommonJ : namesCommonE));
+			} else {
+				cb1.setModel(new DefaultComboBoxModel(GameLocale.isJapanese() ? namesRareJ : namesRareE));
+			}
+			cb1.setMaximumRowCount(8);
+			cb1.setSelectedIndex(0);
+			panel2.add(cb1);
+			JLabel modelabel = new JLabel(mess3);
+			panel3.add(modelabel);
+			cb4 = new JComboBox(mode);
+			cb4.addItemListener(addYukkuriListener);
+			panel3.add(cb4);
+
+			JLabel numlabel = new JLabel(mess4);
+			panel3.add(numlabel);
+			cb5 = new JComboBox(num);
+			cb5.setEditable(true);
+			cb5.setPreferredSize(new java.awt.Dimension(60, 32));
+			cb5.addActionListener(addYukkuriListener);
+			panel3.add(cb5);
+			JLabel rapelabel = new JLabel(mess5);
+			panel4.add(rapelabel);
+			cb6 = new JCheckBox();
+			cb6.setSelected(false);
+			panel4.add(cb6);
+			JLabel label = new JLabel(mess1);
+			panel.add(label);
+			panel.add(panel2);
+			panel.add(panel3);
+			panel.add(panel4);
+			panel.setLayout(new GridLayout(4, 1));
+			panel.setPreferredSize(new java.awt.Dimension(400, 180));
+
+			int ret = JOptionPane.showConfirmDialog(this, panel, SimYukkuri.TITLE, JOptionPane.OK_CANCEL_OPTION,
+					JOptionPane.QUESTION_MESSAGE);
+			if (!shouldProceedAfterAddDialog(ret)) {
+				break;
+			}
+
+			int maxNum;
+			try {
+				maxNum = Integer.parseInt(cb5.getSelectedItem().toString());
+			} catch (NumberFormatException ne) {
+				maxNum = 1;
+			}
+			final int maxBodyCount = maxNum;
+			final int randomTypeIndex = cb4.getSelectedIndex();
+			final int baseTypeIndex = cb1.getSelectedIndex();
+			final int rareTypeIndex = cb3.getSelectedIndex();
+			final int ageTypeIndex = cb2.getSelectedIndex();
+			final boolean isRaper = cb6.isSelected();
+			final String loadingMsg = GameLocale.isJapanese() ? "読み込み中..." : "Loading...";
+			SimYukkuri.simYukkuri.runWithLoadingDialog(loadingMsg, () -> {
+				for (int i = 0; i < maxBodyCount; i++) {
+					YukkuriType selectType;
+					int selectAge;
+					switch (randomTypeIndex) {
+						case 0:
+						default:
+							selectType = resolveSelectedType(rareTypeIndex, baseTypeIndex);
+							selectAge = ageTypeIndex;
+							break;
+						case 1:
+							selectType = YukkuriType.fromTypeId(GameRandom.nextInt(namesCommonJ.length));
+							selectAge = GameRandom.nextInt(3);
+							break;
+						case 2:
+							selectType = YukkuriType.fromTypeId(GameRandom.nextInt(namesRareJ.length) + 1000);
+							selectAge = GameRandom.nextInt(3);
+							break;
+						case 3:
+							int selectRare = GameRandom.nextInt(2);
+							switch (selectRare) {
+								case 0:
+								default:
+									selectType = YukkuriType.fromTypeId(GameRandom.nextInt(namesCommonJ.length));
+									break;
+								case 1:
+									selectType = YukkuriType.fromTypeId(
+											GameRandom.nextInt(namesRareJ.length) + 1000);
+									break;
+							}
+							selectAge = GameRandom.nextInt(3);
+							break;
+					}
+
+					if (selectType == YukkuriType.REIMU && GameRandom.nextInt(20) == 0) {
+						selectType = YukkuriType.REMIRYA;
+					}
+					if (selectType == YukkuriType.REIMU && GameRandom.nextInt(15) == 0) {
+						selectType = YukkuriType.DEIBU;
+					}
+					if (selectType == YukkuriType.MARISA && GameRandom.nextInt(50) == 0) {
+						selectType = YukkuriType.MARISATSUMURI;
+					}
+					if (selectType == YukkuriType.MARISA && GameRandom.nextInt(50) == 0) {
+						selectType = YukkuriType.MARISAKOTATSUMURI;
+					}
+					if (selectType == YukkuriType.AYAYA && GameRandom.nextInt(20) == 0) {
+						selectType = YukkuriType.KIMEEMARU;
+					}
+
+					// if(selectType == Reimu.type || selectType == Marisa.type)
+
+					AgeState age;
+					switch (selectAge) {
+						case babyIndex:
+							age = AgeState.BABY;
+							break;
+						case childIndex:
+							age = AgeState.CHILD;
+							break;
+						case adultIndex:
+						default:
+							age = AgeState.ADULT;
+							break;
+					}
+					Yukkuri b;
+					synchronized (SimYukkuri.lock) {
+						b = terrarium.makeYukkuri(GameRandom.nextInt(Translate.getWorldWidth()),
+								GameRandom.nextInt(Translate.getWorldHeight()), 0, selectType,
+								null, age, null, null, true);
+					}
+					b.addAge(256);
+					if (isRaper) {
+						b.setRaper(true);
+					} else {
+						b.setRaper(false);
+					}
+					boolean imageNagasiMode = SimYukkuri.NAGASI_MODE == 1
+							|| (SimYukkuri.NAGASI_MODE == 2 && GameRandom.nextInt(20) == 0);
+					b.setImageNagasiMode(imageNagasiMode);
+
+					bodies.add(b);
+				}
+			});
+			choice = 1;
+			choice = JOptionPane.showOptionDialog(this, mess2 + System.getProperty("line.separator"), SimYukkuri.TITLE,
+					JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+		}
+		for (Yukkuri b : bodies) {
+			synchronized (SimYukkuri.lock) {
+				terrarium.addYukkuri(b);
+				if (b.getRank() == YukkuriRank.KAIYU) {
+					Cash.buyYukkuri(b);
+				}
+			}
+		}
+	}
+
+	static boolean shouldProceedAfterAddDialog(int result) {
+		return result == JOptionPane.OK_OPTION;
+	}
+
+    /** Applies the category offset before resolving a species from the dialog selection. */
+    static YukkuriType resolveSelectedType(int categoryIndex, int selectedIndex) {
+        int offset = categoryIndex == 1 ? 1000 : categoryIndex == 2 ? 3000 : 0;
+        return YukkuriType.fromTypeId(offset + selectedIndex);
+    }
+
+	/**
+	 * ゆっくり用描画位置の計算
+	 * 
+	 * @param origin 対象ゆっくりの原点
+	 * @param spr    対象ゆっくりのスプライト
+	 */
+	void calcDrawBodyPosition(Point4y origin, Sprite spr) {
+		final int sizeW = Translate.transSize(spr.getImageW());
+		final int sizeH = Translate.transSize(spr.getImageH());
+		int pivX = Translate.transSize(spr.getPivotX());
+		int pivY = Translate.transSize(spr.getPivotY());
+
+		// 左右両向きの描画範囲を作成
+		spr.calcScreenRect(origin, pivX, pivY, sizeW, sizeH);
+	}
+
+	/**
+	 * 汎用の描画位置の計算
+	 *
+	 * @param o    描画対象オブジェクト
+	 * @param rect オブジェクトの占有長方形
+	 */
+	void calcDrawPosition(Entity o, Rectangle4y rect) {
+		final int sizeW = Translate.transSize(o.getW());
+		final int sizeH = Translate.transSize(o.getH());
+		int pivX = Translate.transSize(o.getPivotX());
+		int pivY = Translate.transSize(o.getPivotY());
+		Translate.translate(o.getX(), o.getY(), tmpPoint);
+		rect.setX(tmpPoint.getX() - pivX);
+		rect.setY(tmpPoint.getY() - pivY);
+		rect.setWidth(sizeW);
+		rect.setHeight(sizeH);
+
+		// オブジェクトに描画情報を設定
+		// この描画範囲を使用してマウスとの当たり判定を取得
+		o.setScreenPivot(tmpPoint);
+		o.setScreenRect(rect);
+	}
+
+	/**
+	 * ゲーム画面を描画する。{@link Renderer} に処理を委譲する。
+	 *
+	 * @param g 描画対象 Graphics
+	 */
+	@Override
+	public void paint(Graphics g) {
+		new Renderer().render(this, g);
+	}
+
+	/** 文字メッセージの表示 */
+	int drawStringMultiLine(Graphics2D g2d, String str, int posX, int posY, int width, boolean flag) {
+		AttributedString as = new AttributedString(str);
+		as.addAttribute(TextAttribute.FONT, g2d.getFont());
+		AttributedCharacterIterator asiterator = as.getIterator();
+		FontRenderContext context = g2d.getFontRenderContext();
+		LineBreakMeasurer lineMeasurer = new LineBreakMeasurer(as.getIterator(), context);
+		float formatWidth = (float) width;
+		float drawPosX = 0;
+		float drawPosY = posY;
+		int beginIndex = asiterator.getBeginIndex();
+		int endIndex = asiterator.getEndIndex();
+		lineMeasurer.setPosition(beginIndex);
+		while (lineMeasurer.getPosition() < endIndex) {
+			TextLayout layout = lineMeasurer.nextLayout(formatWidth);
+			drawPosY += layout.getAscent();
+			if (layout.isLeftToRight()) {
+				drawPosX = posX;
+			} else {
+				drawPosX = posX + formatWidth - layout.getAdvance();
+			}
+			if (flag) {
+				layout.draw(g2d, drawPosX, drawPosY);
+			}
+			drawPosY += layout.getDescent() + layout.getLeading();
+		}
+		return (int) Math.ceil(drawPosY);
+	}
+
+	/**
+	 * ゲームスレッドが動作中かどうかを返す。
+	 *
+	 * @return 動作中なら true
+	 */
+	public boolean isRunning() {
+		return isRunning;
+	}
+
+	/**
+	 * ゲームスレッド動作フラグをセットする。
+	 *
+	 * @param isRunning true で動作中
+	 */
+	public void setRunning(boolean isRunning) {
+		this.isRunning = isRunning;
+	}
+
+	/**
+	 * ログ出力先フラグを返す（1=ダイアログ出力）。
+	 *
+	 * @return ログ出力先フラグ
+	 */
+	public int getLogOutput() {
+		return logOutput;
+	}
+
+	/**
+	 * テラリウムインスタンスを返す。
+	 *
+	 * @return テラリウム
+	 */
+	public Terrarium getTerrarium() {
+		return terrarium;
+	}
+
+	/**
+	 * テラリウムインスタンスをセットする。
+	 *
+	 * @param terrarium 新しいテラリウム
+	 */
+	public void setTerrarium(Terrarium terrarium) {
+		this.terrarium = terrarium;
+	}
+
+	/**
+	 * 描画キューを返す。
+	 *
+	 * @return 描画キュー
+	 */
+	public List<Object> getRenderQueue() {
+		return renderQueue;
+	}
+
+	/**
+	 * 描画キューをセットする。
+	 *
+	 * @param renderQueue 新しい描画キュー
+	 */
+	public void setRenderQueue(List<Object> renderQueue) {
+		this.renderQueue = renderQueue;
+	}
+
+	/**
+	 * メッセージ表示中のゆっくりリストを返す。
+	 *
+	 * @return メッセージ表示中ゆっくりリスト
+	 */
+	public List<Yukkuri> getMessageBodies() {
+		return messageBodies;
+	}
+
+	/**
+	 * メッセージ表示ゆっくりリストをセットする。
+	 *
+	 * @param messageBodies 新しいメッセージ表示ゆっくりリスト
+	 */
+	public void setMessageBodies(List<Yukkuri> messageBodies) {
+		this.messageBodies = messageBodies;
+	}
+
+	/**
+	 * 描画位置計算用テンポラリ配列を返す。
+	 *
+	 * @return 描画位置計算用テンポラリ配列
+	 */
+	public int[] getPosTmp() {
+		return posTmp;
+	}
+
+	/**
+	 * 描画位置計算用テンポラリ配列をセットする。
+	 *
+	 * @param posTmp 新しいテンポラリ配列
+	 */
+	public void setPosTmp(int[] posTmp) {
+		this.posTmp = posTmp;
+	}
+
+	/**
+	 * レイヤー描画用テンポラリ画像配列を返す。
+	 *
+	 * @return レイヤー描画用テンポラリ画像配列
+	 */
+	public BufferedImage[] getLayerTmp() {
+		return layerTmp;
+	}
+
+	/**
+	 * レイヤー描画用テンポラリ画像配列をセットする。
+	 *
+	 * @param layerTmp 新しいテンポラリ画像配列
+	 */
+	public void setLayerTmp(BufferedImage[] layerTmp) {
+		this.layerTmp = layerTmp;
+	}
+
+	Point4y getTmpPoint() {
+		return tmpPoint;
+	}
+
+	Rectangle4y getTmpRect() {
+		return tmpRect;
+	}
+
+	/**
+	 * 拡大表示倍率ヒントオブジェクトを返す。
+	 *
+	 * @return 拡大表示倍率ヒント
+	 */
+	public Object getRenderScale() {
+		return renderScale;
+	}
+
+	/**
+	 * アイテムカーソル描画用ストロークを返す。
+	 *
+	 * @return アイテムカーソル用ストローク
+	 */
+	public static Stroke getItemCurStroke() {
+		return ITEM_CUR_STROKE;
+	}
+
+	/**
+	 * アイテムカーソル描画色を返す。
+	 *
+	 * @return アイテムカーソル色
+	 */
+	public static Color getItemCurColor() {
+		return ITEM_CUR_COLOR;
+	}
+
+	public static Ellipse2D.Float getItemCurShape() {
+		return ITEM_CUR_SHAPE;
+	}
+
+	static Stroke getDefaultStroke() {
+		return DEFAULT_STROKE;
+	}
+
+	static Font getDefaultFont() {
+		return DEFAULT_FONT;
+	}
+
+	static Font getNegiFont() {
+		return NEGI_FONT;
+	}
+
+	static int getDrawShadowShitBaby() {
+		return drawShadowShitBaby;
+	}
+
+	static int getDrawShadowVomitBaby() {
+		return drawShadowVomitBaby;
+	}
+}

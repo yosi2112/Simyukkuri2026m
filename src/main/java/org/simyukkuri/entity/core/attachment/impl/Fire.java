@@ -1,0 +1,274 @@
+package org.simyukkuri.entity.core.attachment.impl;
+
+import java.awt.image.BufferedImage;
+import java.awt.image.ImageObserver;
+import java.io.File;
+import java.io.IOException;
+import org.simyukkuri.engine.ModLoader;
+import org.simyukkuri.entity.core.attachment.Attachment;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.enums.AgeState;
+import org.simyukkuri.enums.AttachProperty;
+import org.simyukkuri.enums.HairState;
+import org.simyukkuri.enums.Happiness;
+import org.simyukkuri.enums.TickResult;
+import org.simyukkuri.system.MessagePool;
+import org.simyukkuri.util.GameMessages;
+import org.simyukkuri.util.GameRandom;
+import org.simyukkuri.util.GameText;
+
+/**
+ * 炎
+ *
+ */
+public class Fire extends Attachment {
+
+	private static final long serialVersionUID = 6287719941237079636L;
+	private static final String POS_KEY = "Fire";
+	/**
+	 * 画像の入れ物
+	 * <br>
+	 * [年齢][左右反転][アニメパターン]
+	 */
+	private static BufferedImage[][] images;
+	/** 画像のサイズ */
+	private static int[] imgW;
+	private static int[] imgH;
+	/** 画像の描画原点の座標 */
+	private static int[] pivX;
+	private static int[] pivY;
+	/** 継承元のenum AttachProperty の代入値 */
+	private static final int[] property = {
+			4, // 赤ゆ用画像サイズ 原画をこの値で割る
+			2, // 子ゆ用画像サイズ
+			1, // 成ゆ用画像サイズ
+			0, // 親オブジェクトの位置基準 0:顔、お飾り向けの元サイズ 1:妊娠などの膨らみも含むサイズ
+			1, // アニメ速度
+			0, // アニメループ回数
+			4 // アニメ画像枚数
+	};
+
+	/** 燃焼時間 */
+	private int burnPeriod;
+
+	/**
+	 * イメージをロードする.
+	 * 
+	 * @param loader ローダ
+	 * @param io     イメージオブザーバ
+	 * @throws IOException IO例外
+	 */
+	public static void loadImages(ClassLoader loader, ImageObserver io) throws IOException {
+
+		int baby = AgeState.BABY.ordinal();
+		int child = AgeState.CHILD.ordinal();
+		int adult = AgeState.ADULT.ordinal();
+		images = new BufferedImage[3][4];
+
+		// 炎
+		for (int i = 0; i < 4; i++) {
+			images[adult][i] = ModLoader.loadItemImage(loader, "effect" + File.separator + "fire_" + i + ".png");
+		}
+
+		int w = images[adult][0].getWidth(io);
+		int h = images[adult][0].getHeight(io);
+		for (int i = 0; i < images[adult].length; i++) {
+			images[child][i] = ModLoader.scaleImage(images[adult][i], w / property[AttachProperty.CHILD_SIZE.ordinal()],
+					h / property[AttachProperty.CHILD_SIZE.ordinal()]);
+			images[baby][i] = ModLoader.scaleImage(images[adult][i], w / property[AttachProperty.BABY_SIZE.ordinal()],
+					h / property[AttachProperty.BABY_SIZE.ordinal()]);
+		}
+
+		imgW = new int[3];
+		imgH = new int[3];
+		pivX = new int[3];
+		pivY = new int[3];
+		for (int i = 0; i < 3; i++) {
+			if (images[i][0] == null) {
+				continue;
+			}
+			imgW[i] = images[i][0].getWidth(io);
+			imgH[i] = images[i][0].getHeight(io);
+			pivX[i] = imgW[i] >> 1;
+			pivY[i] = imgH[i] - 1;
+		}
+	}
+
+	/** アニメフレームに応じた炎画像を返す。 */
+	@Override
+	public BufferedImage getImage(Yukkuri b) {
+		Yukkuri pa = org.simyukkuri.util.YukkuriLookup.getYukkuriById(parent);
+		if (pa == null) {
+			return null;
+		}
+		return images[pa.getAgeState().ordinal()][animeFrame];
+	}
+
+	/** 炎のティック処理。ダメージ・ストレス加算、燃焼進行、お飾り・毛の消失、実ゆ親への通知を行う。 */
+	@Override
+	protected TickResult update() {
+		Yukkuri pa = org.simyukkuri.util.YukkuriLookup.getYukkuriById(parent);
+		if (pa == null) {
+			return TickResult.NONE;
+		}
+		// 生きてたらセリフとダメージ加算
+		if (!pa.isDead()) {
+			pa.clearActions();
+			if (pa.isNotNyd()) {
+				if (!pa.isTalking()) {
+					pa.setMessage(GameMessages.getMessage(pa, MessagePool.Action.Burning), 20, true, true);
+				}
+			}
+			pa.addDamage(TICK * 90);
+			pa.addStress(50);
+			// 背面固定で針が刺さってないなら尻を振る
+			if (pa.isFixBack() && !pa.isNeedled()) {
+				if (GameRandom.nextInt(10) == 0) {
+					pa.setFurifuri(true);
+				}
+			} else {
+				if (pa.isLockmove()) {
+					if (GameRandom.nextInt(3) == 0) {
+						pa.setNobinobi(true);
+					}
+				}
+			}
+
+		}
+		// 燃焼時間
+		burnPeriod += TICK * 90;
+		pa.addBakePeriod(90);
+		// お飾り消失
+		if (burnPeriod > (pa.getDamageLimit() / 3) && pa.hasOkazari()) {
+			pa.takeOkazari(false);
+		} else if (burnPeriod > (pa.getDamageLimit() * 2 / 3) && pa.getHairState() != HairState.BALDHEAD) {
+			pa.pickHair();
+
+		} else if (burnPeriod * 90 > pa.getDamageLimit()) {
+			if (pa.isDead()) {
+				pa.setBurned(true);
+			}
+		}
+		if (pa.isDead() && pa.isBurned()) {
+			return TickResult.REMOVED;
+		}
+
+		// 実ゆの場合、親が反応する
+		if (GameRandom.nextInt(3) == 0) {
+			Yukkuri bodyMother = org.simyukkuri.util.YukkuriLookup.getYukkuriById(pa.getBindStalkMotherCanNotice());
+			if (bodyMother != null) {
+				if (bodyMother.isNotNyd()) {
+					bodyMother.setHappiness(Happiness.VERY_SAD);
+					bodyMother.setMessage(GameMessages.getMessage(bodyMother, MessagePool.Action.AbuseBaby));
+					bodyMother.addStress(15);
+				}
+			}
+		}
+		return TickResult.NONE;
+	}
+
+	/** 親ゆっくりの年齢層に応じて境界ボックスをリセットする。 */
+	@Override
+	public void resetBoundary() {
+		Yukkuri pa = org.simyukkuri.util.YukkuriLookup.getYukkuriById(parent);
+		if (pa == null) {
+			return;
+		}
+		if (pivX == null || pivY == null || imgW == null || imgH == null) {
+			return;
+		}
+		int idx = pa.getAgeState().ordinal();
+		if (idx < 0 || idx >= pivX.length || idx >= pivY.length || idx >= imgW.length || idx >= imgH.length) {
+			return;
+		}
+		setBoundary(pivX[pa.getAgeState().ordinal()],
+				pivY[pa.getAgeState().ordinal()],
+				imgW[pa.getAgeState().ordinal()],
+				imgH[pa.getAgeState().ordinal()]);
+	}
+
+	/**
+	 * コンストラクタ
+	 * 
+	 * @param body 装着されるゆっくり
+	 */
+	public Fire(Yukkuri body) {
+		super(body);
+		setAttachProperty(property, POS_KEY);
+		Yukkuri pa = org.simyukkuri.util.YukkuriLookup.getYukkuriById(parent);
+		if (pa != null && pivX != null && pivY != null && imgW != null && imgH != null) {
+			int idx = pa.getAgeState().ordinal();
+			if (idx >= 0 && idx < pivX.length && idx < pivY.length && idx < imgW.length && idx < imgH.length) {
+				setBoundary(pivX[idx], pivY[idx], imgW[idx], imgH[idx]);
+			}
+		}
+		burnPeriod = 0;
+		value = 0;
+		cost = 0;
+
+		// 処理インターバルの変更
+		processInterval = 1;
+	}
+
+	/** Jackson デシリアライズ用デフォルトコンストラクタ。 */
+	public Fire() {
+
+	}
+
+	/** 燃焼経過時間を返す。 */
+	public int getBurnPeriod() {
+		return burnPeriod;
+	}
+
+	/** 燃焼経過時間をセットする。 */
+	public void setBurnPeriod(int burnPeriod) {
+		this.burnPeriod = burnPeriod;
+	}
+
+	/** アイテム名テキストを返す。 */
+	@Override
+	public String toString() {
+		return GameText.read("item_fire");
+	}
+
+	// テスト用静的アクセサ
+	/** 画像配列を返す。 */
+	public static BufferedImage[][] getImages() {
+		return images;
+	}
+
+	/** 画像配列をセットする。 */
+	public static void setImages(BufferedImage[][] images) {
+		Fire.images = images;
+	}
+
+	/** 画像幅配列をセットする。 */
+	public static void setImgW(int[] imgW) {
+		Fire.imgW = imgW;
+	}
+
+	/** 画像高さ配列をセットする。 */
+	public static void setImgH(int[] imgH) {
+		Fire.imgH = imgH;
+	}
+
+	/** 画像原点 X 配列をセットする。 */
+	public static void setPivX(int[] pivX) {
+		Fire.pivX = pivX;
+	}
+
+	/** 画像原点 Y 配列をセットする。 */
+	public static void setPivY(int[] pivY) {
+		Fire.pivY = pivY;
+	}
+
+	/** 位置キー文字列を返す。 */
+	public static String getPosKey() {
+		return POS_KEY;
+	}
+
+	/** アタッチメントプロパティ配列を返す。 */
+	public static int[] getProperty() {
+		return property;
+	}
+}

@@ -1,0 +1,53 @@
+package org.simyukkuri.enums;
+
+import org.simyukkuri.util.GameText;
+
+/** ゆっくりのランク。 */
+public enum YukkuriRank {
+	/** 飼いゆ */
+	KAIYU(0, 0, GameText.read("enums_petyu")),
+	/** 捨てゆ */
+	SUTEYU(0, 0, GameText.read("enums_throwyu")),
+	/** 野良ゆ(きれい) */
+	NORAYU_CLEAN(0, 1, GameText.read("enums_strayyu")),
+	/** 野良ゆ */
+	NORAYU(1, 1, GameText.read("enums_strayyu")),
+	/** 野生ゆ */
+	YASEIYU(0, 1, GameText.read("enums_wildyu")),
+	;
+
+	/** ランクに対応した画像のindex */
+	private final int imageIndex;
+	/** ランクに対応したメッセージのindex */
+	private final int messageIndex;
+	/** ランクに対応した文字列（"飼いゆ","捨てゆ"など） */
+	private final String displayName;
+
+	/**
+	 * コンストラクタ.
+	 * 
+	 * @param img ランクに対応した画像のindex
+	 * @param msg ランクに対応したメッセージのindex
+	 * @param str ランクに対応した文字列（"飼いゆ","捨てゆ"など）
+	 */
+	YukkuriRank(int img, int msg, String str) {
+		this.imageIndex = img;
+		this.messageIndex = msg;
+		this.displayName = str;
+	}
+
+	/** ランクに対応する画像インデックスを返す。 */
+	public int getImageIndex() {
+		return imageIndex;
+	}
+
+	/** ランクに対応するメッセージインデックスを返す。 */
+	public int getMessageIndex() {
+		return messageIndex;
+	}
+
+	/** ランクの表示名を返す。 */
+	public String getDisplayName() {
+		return displayName;
+	}
+}

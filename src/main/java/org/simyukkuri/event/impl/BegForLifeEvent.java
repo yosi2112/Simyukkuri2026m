@@ -1,0 +1,275 @@
+package org.simyukkuri.event.impl;
+
+import org.simyukkuri.entity.core.Entity;
+import org.simyukkuri.entity.core.attachment.impl.Fire;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.enums.CriticalDamageType;
+import org.simyukkuri.enums.Happiness;
+import org.simyukkuri.enums.ImageCode;
+import org.simyukkuri.enums.Intelligence;
+import org.simyukkuri.event.EventPacket;
+import org.simyukkuri.system.MessagePool;
+import org.simyukkuri.util.GameMessages;
+import org.simyukkuri.util.GameRandom;
+import org.simyukkuri.util.GameText;
+
+/**
+ * 命乞いイベント
+ * protected Yukkuri from; // イベントを発した個体
+ * protected Yukkuri to; // 攻撃対象
+ * protected Entity target; // 未使用
+ * protected int count; // 10
+ */
+public class BegForLifeEvent extends EventPacket {
+
+	private static final long serialVersionUID = 9141159728976292371L;
+	private int roop = 0;
+	private int roop2 = 0;
+	private int roop3 = 0;
+
+	int tick = 0;
+	private int wait = 0;
+
+	/**
+	 * コンストラクタ.
+	 */
+	public BegForLifeEvent(Yukkuri f, Yukkuri t, Entity tgt, int cnt) {
+		super(f, t, tgt, cnt);
+	}
+
+	/** Jackson デシリアライズ用デフォルトコンストラクタ。 */
+	public BegForLifeEvent() {
+
+	}
+
+	/** ループカウンタ1を返す。 */
+	public int getRoop() {
+		return roop;
+	}
+
+	/** ループカウンタ1をセットする。 */
+	public void setRoop(int roop) {
+		this.roop = roop;
+	}
+
+	/** ループカウンタ2を返す。 */
+	public int getRoop2() {
+		return roop2;
+	}
+
+	/** ループカウンタ2をセットする。 */
+	public void setRoop2(int roop2) {
+		this.roop2 = roop2;
+	}
+
+	/** ループカウンタ3を返す。 */
+	public int getRoop3() {
+		return roop3;
+	}
+
+	/** ループカウンタ3をセットする。 */
+	public void setRoop3(int roop3) {
+		this.roop3 = roop3;
+	}
+
+	/** イベントの進行ティックカウンタを返す。 */
+	public int getTick() {
+		return tick;
+	}
+
+	/** イベントの進行ティックカウンタをセットする。 */
+	public void setTick(int tick) {
+		this.tick = tick;
+	}
+
+	/** 待機カウントを返す。 */
+	public int getWait() {
+		return wait;
+	}
+
+	/** 待機カウントをセットする。 */
+	public void setWait(int wait) {
+		this.wait = wait;
+	}
+
+	/**
+	 * 参加チェック
+	 * ここで各種チェックを行い、イベントへ参加するかを返す
+	 * また、イベント優先度も必要に応じて設定できる
+	 */
+	@Override
+	public boolean checkEventResponse(Yukkuri body) {
+
+		setHighPriority();
+		Yukkuri sourceBody = org.simyukkuri.util.YukkuriLookup.getYukkuriById(getFrom());
+		if (body == sourceBody && !body.isUnBirth()) {
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * イベント開始動作
+	 */
+	@Override
+	public void start(Yukkuri body) {
+	}
+
+	/**
+	 * 毎フレーム処理
+	 * UpdateState.ABORTを返すとイベント終了
+	 */
+	@Override
+	public UpdateState update(Yukkuri body) {
+		if (body.isTalking()) {
+			// body.setEventResMessage(GameMessages.getMessage(body,
+			// MessagePool.Action.ApologyToHuman), 20, false, true);
+			return null;
+		}
+		if (body.getDamage() == 0) {
+			roop = 0;
+			roop2 = 0;
+		}
+		if (tick == 0) {
+			body.wakeup();
+			// 興奮状態解除
+			body.setCalm();
+			body.stayPurupuru(5);
+			body.setForceFace(ImageCode.VAIN.ordinal());
+			roop = GameRandom.nextInt(5) + 5;
+			roop2 = GameRandom.nextInt(10) + 8;
+			roop3 = GameRandom.nextInt(3) + 1;
+		} else if (tick >= 7 && roop != 0 && roop2 != 0 && roop3 != 0) {
+			body.stay(30);
+			body.setForceFace(ImageCode.CRYING.ordinal());
+			body.setBegging(true);
+			body.setEventResMessage(GameMessages.getMessage(body, MessagePool.Action.ApologyToHuman), 20, false,
+					GameRandom.nextBoolean());
+			roop--;
+		} else if (roop == 0 && roop2 != 0 && roop3 != 0) {
+			// 反応する
+			body.stay(80);
+			body.setEventResMessage(GameMessages.getMessage(body, MessagePool.Action.BegForLife), 20, false,
+					GameRandom.nextBoolean());
+			body.setHappiness(Happiness.VERY_SAD);
+			body.setForceFace(ImageCode.CRYING.ordinal());
+			// なつき度設定
+			body.addLovePlayer(-10);
+			roop2--;
+			wait = 0;
+		} else if (wait == 50 && roop == 0 && roop2 == 0 && roop3 != 0) {
+			body.setBegging(false);
+			// 着火状態か足が破れてる状態で見逃してもらう
+			if (body.getAttachmentSize(Fire.class) != 0 || body.getCriticalDamageType() == CriticalDamageType.CUT) {
+				body.setEventResMessage(GameMessages.getMessage(body, MessagePool.Action.ThanksHuman2), 25, true,
+						false);
+				body.setHappiness(Happiness.VERY_SAD);
+				body.setForceFace(ImageCode.CRYING.ordinal());
+				return UpdateState.ABORT;
+			}
+			// ダメージ状態で見逃してもらう
+			if (body.isDamaged()) {
+				body.setEventResMessage(GameMessages.getMessage(body, MessagePool.Action.ThanksHuman2), 25, true,
+						false);
+				body.setHappiness(Happiness.SAD);
+				body.setForceFace(ImageCode.TIRED.ordinal());
+				// 増長
+				switch (body.getAttitude()) {
+					case VERY_NICE:
+						body.addStress(body.getStressLimit() / 30);
+						body.plusAttitude(10);
+						break;
+					case NICE:
+						body.addStress(body.getStressLimit() / 20);
+						body.plusAttitude(5);
+						break;
+					case AVERAGE:
+						body.addStress(body.getStressLimit() / 20);
+						// body.plusAttitude(0);
+						break;
+					case SHITHEAD:
+					case SUPER_SHITHEAD:
+						body.addStress(body.getStressLimit() / 10);
+						if (body.getIntelligence() == Intelligence.FOOL) {
+							body.plusAttitude(-30);
+						} else {
+							body.plusAttitude(-20);
+						}
+						break;
+					default:
+						break;
+				}
+			} else {
+				// 命乞い成功
+				// 賢くないゲス
+				if (body.isRude() && body.getIntelligence() != Intelligence.WISE) {
+					body.setEventResMessage(GameMessages.getMessage(body, MessagePool.Action.ThanksHuman), 25, true,
+							true);
+					body.setHappiness(Happiness.VERY_HAPPY);
+					body.setForceFace(ImageCode.RUDE.ordinal());
+				} else {
+					body.setEventResMessage(GameMessages.getMessage(body, MessagePool.Action.ThanksHuman), 25, true,
+							true);
+					body.setHappiness(Happiness.VERY_HAPPY);
+					body.setForceFace(ImageCode.SMILE.ordinal());
+				}
+
+				// 増長
+				switch (body.getAttitude()) {
+					case VERY_NICE:
+						body.addStress(-body.getStressLimit() / 20);
+						body.plusAttitude(10);
+						break;
+					case NICE:
+						body.addStress(-body.getStressLimit() / 10);
+						// body.plusAttitude(0);
+						break;
+					case AVERAGE:
+						body.addStress(-body.getStressLimit() / 5);
+						body.plusAttitude(-30);
+						break;
+					case SHITHEAD:
+					case SUPER_SHITHEAD:
+						body.addStress(-body.getStressLimit() / 3);
+						body.plusAttitude(-50);
+						break;
+					default:
+						break;
+				}
+			}
+			roop3--;
+			wait = 0;
+		} else if (wait == 30 && roop == 0 && roop2 == 0 && roop3 == 0) {
+			// 独り言ちる
+			body.setMessage(GameMessages.getMessage(body, MessagePool.Action.Monologue), true);
+			return UpdateState.ABORT;
+		}
+		tick++;
+		wait++;
+		return null;
+	}
+
+	/**
+	 * イベント目標に到着した際に呼ばれる
+	 * trueを返すとイベント終了
+	 */
+	@Override
+	public boolean execute(Yukkuri body) {
+		return true;
+	}
+
+	/**
+	 * もしもの後始末
+	 */
+	@Override
+	public void end(Yukkuri body) {
+		body.setBegging(false);
+		return;
+	}
+
+	/** イベント名の文字列表現を返す。 */
+	@Override
+	public String toString() {
+		return GameText.read("event_beg");
+	}
+}

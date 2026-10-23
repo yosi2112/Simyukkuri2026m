@@ -1,0 +1,641 @@
+package org.simyukkuri.logic;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.simyukkuri.draw.Translate;
+import org.simyukkuri.entity.core.Entity;
+import org.simyukkuri.entity.core.attachment.impl.Ants;
+import org.simyukkuri.entity.core.living.yukkuri.Yukkuri;
+import org.simyukkuri.enums.AgeState;
+import org.simyukkuri.enums.CoreAnkoState;
+import org.simyukkuri.enums.CriticalDamageType;
+import org.simyukkuri.enums.PredatorType;
+import org.simyukkuri.system.Sprite;
+import org.simyukkuri.util.GameRandom;
+import org.simyukkuri.util.GameWorld;
+import org.simyukkuri.util.RandomSource;
+import org.simyukkuri.util.WorldTestHelper;
+
+class BodyMovementTest {
+
+	private Yukkuri body;
+
+	@BeforeEach
+	void setUp() {
+		WorldTestHelper.resetWorld();
+		WorldTestHelper.initializeMinimalWorld();
+		body = WorldTestHelper.createBody();
+		body.setAgeState(AgeState.ADULT);
+		body.setDead(false);
+		body.setDamage(0);
+		body.setHungry(body.getHungryLimit());
+		body.setFlyingType(false);
+		body.setHasBaby(false);
+		body.setHasStalk(false);
+		body.setBlind(false);
+		body.setPredatorType(null);
+	}
+
+	@AfterEach
+	void tearDown() {
+		GameRandom.clearOverride();
+		WorldTestHelper.resetWorld();
+	}
+
+	@Test
+	void normalAdultUsesConfiguredStep() {
+		assertEquals(body.getStepBase()[AgeState.ADULT.ordinal()], YukkuriMovement.calculateMovementStep(body));
+	}
+
+	@Test
+	void hungryNonPredatorHalvesStep() {
+		body.setHungry(0);
+		body.setPredatorType(null);
+
+		assertEquals(2, YukkuriMovement.calculateMovementStep(body));
+	}
+
+	@Test
+	void hungryPredatorKeepsStep() {
+		body.setHungry(0);
+		body.setPredatorType(PredatorType.BITE);
+
+		assertEquals(4, YukkuriMovement.calculateMovementStep(body));
+	}
+
+	@Test
+	void damageSicknessPainAndCarryingHalveStep() {
+		body.setDamage(body.getDamageLimit() / 2);
+		assertEquals(2, YukkuriMovement.calculateMovementStep(body));
+
+		body.setDamage(0);
+		body.forceSetSick();
+		assertEquals(2, YukkuriMovement.calculateMovementStep(body));
+
+		body.setSickPeriod(0);
+		body.setCriticalDamege(CriticalDamageType.INJURED);
+		assertEquals(2, YukkuriMovement.calculateMovementStep(body));
+
+		body.setCriticalDamege(null);
+		body.setHasBaby(true);
+		assertEquals(2, YukkuriMovement.calculateMovementStep(body));
+	}
+
+	@Test
+	void antsAndBlindCanReduceStepToMinimumOne() {
+		body.addAttachment(new Ants());
+		body.setBlind(true);
+
+		assertEquals(1, YukkuriMovement.calculateMovementStep(body));
+	}
+
+	@Test
+	void stepZeroIsCorrectedToOne() {
+		body.setStepBase(new int[] { 0, 0, 0 });
+
+		assertEquals(1, YukkuriMovement.calculateMovementStep(body));
+	}
+
+	@Test
+	void movementFrequencyUsesAdultStepAsBase() {
+		assertEquals(2, YukkuriMovement.calculateMovementFrequency(body, 2));
+		assertEquals(4, YukkuriMovement.calculateMovementFrequency(body, 1));
+	}
+
+	@Test
+	void destinationXAheadSetsPositiveDirection() {
+		body.setX(10);
+		body.setDestX(20);
+
+		YukkuriMovement.updateDestinationDirectionX(body);
+
+		assertEquals(1, body.getDirX());
+		assertEquals(20, body.getDestX());
+	}
+
+	@Test
+	void destinationXBehindSetsNegativeDirection() {
+		body.setX(20);
+		body.setDestX(10);
+
+		YukkuriMovement.updateDestinationDirectionX(body);
+
+		assertEquals(-1, body.getDirX());
+		assertEquals(10, body.getDestX());
+	}
+
+	@Test
+	void destinationXReachedClearsDestination() {
+		body.setX(10);
+		body.setDestX(10);
+
+		YukkuriMovement.updateDestinationDirectionX(body);
+
+		assertEquals(0, body.getDirX());
+		assertEquals(-1, body.getDestX());
+	}
+
+	@Test
+	void destinationYAheadSetsPositiveDirection() {
+		body.setY(10);
+		body.setDestY(20);
+
+		YukkuriMovement.updateDestinationDirectionY(body);
+
+		assertEquals(1, body.getDirY());
+		assertEquals(20, body.getDestY());
+	}
+
+	@Test
+	void destinationYBehindSetsNegativeDirection() {
+		body.setY(20);
+		body.setDestY(10);
+
+		YukkuriMovement.updateDestinationDirectionY(body);
+
+		assertEquals(-1, body.getDirY());
+		assertEquals(10, body.getDestY());
+	}
+
+	@Test
+	void destinationYReachedClearsDestination() {
+		body.setY(10);
+		body.setDestY(10);
+
+		YukkuriMovement.updateDestinationDirectionY(body);
+
+		assertEquals(0, body.getDirY());
+		assertEquals(-1, body.getDestY());
+	}
+
+	@Test
+	void randomDirectionXBeforeThresholdOnlyIncrementsCount() {
+		body.setSameDirectionFactor(2);
+		body.setCountX(body.getSameDirectionFactor() * body.getStepBase()[AgeState.ADULT.ordinal()] - 1);
+		body.setDirX(1);
+
+		YukkuriMovement.updateRandomDirectionX(body);
+
+		assertEquals(body.getSameDirectionFactor() * body.getStepBase()[AgeState.ADULT.ordinal()], body.getCountX());
+		assertEquals(1, body.getDirX());
+	}
+
+	@Test
+	void randomDirectionXAtThresholdResetsCountAndUpdatesDirection() {
+		body.setSameDirectionFactor(2);
+		body.setCountX(body.getSameDirectionFactor() * body.getStepBase()[AgeState.ADULT.ordinal()]);
+		body.setDirX(0);
+		GameRandom.setOverride(fixedRandom(0, true));
+
+		YukkuriMovement.updateRandomDirectionX(body);
+
+		assertEquals(0, body.getCountX());
+		assertEquals(1, body.getDirX());
+	}
+
+	@Test
+	void randomDirectionYBeforeThresholdOnlyIncrementsCount() {
+		body.setSameDirectionFactor(2);
+		body.setCountY(body.getSameDirectionFactor() * body.getStepBase()[AgeState.ADULT.ordinal()] - 1);
+		body.setDirY(-1);
+
+		YukkuriMovement.updateRandomDirectionY(body);
+
+		assertEquals(body.getSameDirectionFactor() * body.getStepBase()[AgeState.ADULT.ordinal()], body.getCountY());
+		assertEquals(-1, body.getDirY());
+	}
+
+	@Test
+	void randomDirectionYAtThresholdResetsCountAndUpdatesDirection() {
+		body.setSameDirectionFactor(2);
+		body.setCountY(body.getSameDirectionFactor() * body.getStepBase()[AgeState.ADULT.ordinal()]);
+		body.setDirY(0);
+		GameRandom.setOverride(fixedRandom(0, false));
+
+		YukkuriMovement.updateRandomDirectionY(body);
+
+		assertEquals(0, body.getCountY());
+		assertEquals(-1, body.getDirY());
+	}
+
+	@Test
+	void directionalStepDoublesForExcitingRaper() {
+		assertEquals(1, YukkuriMovement.calculateDirectionalStep(body));
+
+		body.setRaper(true);
+		body.setExciting(true);
+
+		assertEquals(2, YukkuriMovement.calculateDirectionalStep(body));
+	}
+
+	@Test
+	void movementVectorUsesDirectionsStepAndSpeed() {
+		body.setDirX(1);
+		body.setDirY(-1);
+		body.setDirZ(1);
+		body.setSpeed(200);
+
+		YukkuriMovement.MovementVector vector = YukkuriMovement.calculateMovementVector(body, 1);
+
+		assertEquals(2, vector.getX());
+		assertEquals(-2, vector.getY());
+		assertEquals(2, vector.getZ());
+	}
+
+	@Test
+	void movementVectorAddsRemainderStepWhenRandomHits() {
+		body.setDirX(1);
+		body.setDirY(-1);
+		body.setDirZ(1);
+		body.setSpeed(150);
+		GameRandom.setOverride(fixedRandom(0, false));
+
+		YukkuriMovement.MovementVector vector = YukkuriMovement.calculateMovementVector(body, 1);
+
+		assertEquals(2, vector.getX());
+		assertEquals(-2, vector.getY());
+		assertEquals(2, vector.getZ());
+	}
+
+	@Test
+	void movementVectorKeepsBaseVectorWhenRandomMissesRemainder() {
+		body.setDirX(1);
+		body.setDirY(-1);
+		body.setDirZ(1);
+		body.setSpeed(150);
+		GameRandom.setOverride(fixedRandom(99, false));
+
+		YukkuriMovement.MovementVector vector = YukkuriMovement.calculateMovementVector(body, 1);
+
+		assertEquals(1, vector.getX());
+		assertEquals(-1, vector.getY());
+		assertEquals(1, vector.getZ());
+	}
+
+	@Test
+	void flightDestinationAheadSetsPositiveZDirection() {
+		Yukkuri target = createMappedMoveTarget();
+		body.setMoveTargetId(target.getObjId());
+		body.setFlyingType(true);
+		body.setHasBraid(true);
+		body.setZ(10);
+		body.setDestZ(20);
+
+		YukkuriMovement.updateFlightDestination(body);
+
+		assertEquals(1, body.getDirZ());
+		assertEquals(20, body.getDestZ());
+	}
+
+	@Test
+	void flightDestinationReachedClearsDestinationWhenTargetExists() {
+		Yukkuri target = createMappedMoveTarget();
+		body.setMoveTargetId(target.getObjId());
+		body.setFlyingType(true);
+		body.setHasBraid(true);
+		body.setZ(10);
+		body.setDestZ(10);
+
+		YukkuriMovement.updateFlightDestination(body);
+
+		assertEquals(0, body.getDirZ());
+		assertEquals(-1, body.getDestZ());
+	}
+
+	@Test
+	void flightWithoutTargetKeepsHeightLimitAsDestination() {
+		body.setMoveTargetId(-1);
+		body.setFlyingType(true);
+		body.setHasBraid(true);
+		body.setDestZ(-1);
+
+		YukkuriMovement.updateFlightDestination(body);
+
+		assertEquals(Translate.getFlyHeightLimit(), body.getDestZ());
+	}
+
+	@Test
+	void nonFlyingBodyDoesNotUpdateFlightDestination() {
+		body.setFlyingType(false);
+		body.setDirZ(7);
+		body.setDestZ(20);
+
+		YukkuriMovement.updateFlightDestination(body);
+
+		assertEquals(7, body.getDirZ());
+		assertEquals(20, body.getDestZ());
+	}
+
+	@Test
+	void directedMovementClampsToDestinationWithoutOvershoot() {
+		body.setX(10);
+		body.setY(10);
+		body.setZ(10);
+		body.setDestX(11);
+		body.setDestY(9);
+		body.setDestZ(11);
+		body.setDirX(1);
+		body.setDirY(-1);
+		body.setDirZ(1);
+		body.setFlyingType(true);
+		body.setHasBraid(true);
+
+		YukkuriMovement.applyDirectedMovement(body, YukkuriMovement.MovementVector.of(2, -2, 2));
+
+		assertEquals(11, body.getX());
+		assertEquals(9, body.getY());
+		assertEquals(11, body.getZ());
+	}
+
+	@Test
+	void externalMotionClampsXUnderflowAndAddsFallDamage() {
+		initializeSprites(body);
+		body.setX(0);
+		body.setY(10);
+		body.setVx(-5);
+		body.setVy(0);
+		body.setVz(0);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+
+		boolean handled = YukkuriMovement.applyExternalMotion(body);
+
+		assertEquals(0, body.getX());
+		assertEquals(0, body.getVx());
+		assertEquals(5, body.getFalldownDamage());
+		assertFalse(handled);
+	}
+
+	@Test
+	void externalMotionYOverflowSetsNegativeDirection() {
+		initializeSprites(body);
+		body.setX(10);
+		body.setY(Translate.getWorldHeight());
+		body.setVx(0);
+		body.setVy(5);
+		body.setVz(0);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+
+		boolean handled = YukkuriMovement.applyExternalMotion(body);
+
+		assertEquals(Translate.getWorldHeight(), body.getY());
+		assertEquals(0, body.getVy());
+		assertEquals(-1, body.getDirY());
+		assertFalse(handled);
+	}
+
+	@Test
+	void externalMotionFallsWhenDepthDiffersWithoutFlight() {
+		body.setHasBraid(false);
+		body.setZ(1);
+		body.setMostDepth(0);
+		body.setVx(0);
+		body.setVy(0);
+		body.setVz(0);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+
+		boolean handled = YukkuriMovement.applyExternalMotion(body);
+
+		assertTrue(handled);
+		assertEquals(0, body.getZ());
+	}
+
+	@Test
+	void externalMotionLandingClearsNoDamageNextFall() {
+		body.setZ(1);
+		body.setMostDepth(0);
+		body.setVx(0);
+		body.setVy(0);
+		body.setVz(1);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+		body.setFalldownDamage(10);
+		body.setNoDamageNextFall(true);
+
+		boolean handled = YukkuriMovement.applyExternalMotion(body);
+
+		assertTrue(handled);
+		assertEquals(0, body.getZ());
+		assertEquals(0, body.getFalldownDamage());
+		assertEquals(false, body.isNoDamageNextFall());
+	}
+
+	@Test
+	void directedMovementWallHitWithDestinationIncrementsBlockedCount() {
+		initializeSprites(body);
+		body.setX(100);
+		body.setY(100);
+		body.setZ(0);
+		body.setDestX(101);
+		body.setDestY(100);
+		body.setDirX(1);
+		body.setDirY(0);
+		Translate.setCurrentWallGridValue(101, 100,
+				org.simyukkuri.field.impl.Barrier.BODY_BLOCK_FLAGS[body.getAgeState().ordinal()]);
+
+		YukkuriMovement.applyDirectedMovement(body, YukkuriMovement.MovementVector.of(1, 0, 0));
+		YukkuriMovement.resolveDirectedMovement(body, YukkuriMovement.MovementVector.of(1, 0, 0));
+
+		assertEquals(100, body.getX());
+		assertEquals(1, body.getBlockedTicks());
+	}
+
+	@Test
+	void directedMovementAvoidsPoolWhenBodyDislikesWater() {
+		initializeSprites(body);
+		body.setX(140);
+		body.setY(140);
+		body.setZ(0);
+		body.setDestX(141);
+		body.setDestY(140);
+		body.setDirX(1);
+		body.setDirY(0);
+		body.setLikeWater(false);
+		body.setIntelligence(org.simyukkuri.enums.Intelligence.WISE);
+		GameRandom.setOverride(fixedRandom(1, true));
+		Translate.setCurrentFieldGridValue(141, 140, org.simyukkuri.field.FieldShape.FIELD_POOL);
+		Translate.setCurrentFieldGridValue(140, 140, 0);
+
+		YukkuriMovement.applyDirectedMovement(body, YukkuriMovement.MovementVector.of(1, 0, 0));
+		YukkuriMovement.resolveDirectedMovement(body, YukkuriMovement.MovementVector.of(1, 0, 0));
+
+		assertEquals(140, body.getX());
+	}
+
+	@Test
+	void moveToClampsDestinationToMapRange() {
+		YukkuriMovement.moveTo(body, -10, Translate.getWorldHeight() + 10, Translate.getWorldDepth() + 20);
+
+		assertEquals(0, body.getDestX());
+		assertEquals(Translate.getWorldHeight(), body.getDestY());
+		assertEquals(Translate.getWorldDepth(), body.getDestZ());
+	}
+
+	@Test
+	void moveToYukkuriClearsActionsAndSetsTargetFlag() {
+		Entity target = createMappedMoveTarget();
+		body.setToShit(true);
+		body.setToSukkiri(true);
+
+		YukkuriMovement.moveToYukkuri(body, target, 100, 200, 0);
+
+		assertTrue(body.isToYukkuri());
+		assertFalse(body.isToShit());
+		assertFalse(body.isToSukkiri());
+		assertEquals(target.getObjId(), body.getMoveTargetId());
+		assertEquals(100, body.getDestX());
+		assertEquals(Math.min(200, Translate.getWorldHeight()), body.getDestY());
+	}
+
+	@Test
+	void runAwayTargetsOppositeCornerAndSetsScare() {
+		body.setX(200);
+		body.setY(200);
+		body.setScare(false);
+
+		YukkuriMovement.runAway(body, 100, 100);
+
+		assertEquals(Translate.getWorldWidth(), body.getDestX());
+		assertEquals(Translate.getWorldHeight(), body.getDestY());
+		assertTrue(body.isScare());
+	}
+
+	@Test
+	void runAwayIgnoredWhenBodyCannotAct() {
+		body.setDead(true);
+		body.setDestX(-1);
+		body.setDestY(-1);
+
+		YukkuriMovement.runAway(body, 100, 100);
+
+		assertEquals(-1, body.getDestX());
+		assertEquals(-1, body.getDestY());
+	}
+
+	@Test
+	void landingFirstGroundReducesStress() {
+		// ADULT の jumpLevel=1 なので falldownDamage >= 8/1=8 が必要
+		// noDamageNextFall=true で strike(addStress) を無効化し firstGround の -400 だけを検証
+		body.setFirstGround(true);
+		body.setNoDamageNextFall(true);
+		body.setStress(500);
+		body.setZ(1);
+		body.setMostDepth(0);
+		body.setVx(0);
+		body.setVy(0);
+		body.setVz(1);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+		body.setFalldownDamage(7);
+
+		YukkuriMovement.applyExternalMotion(body);
+
+		assertEquals(100, body.getStress(), "初接地着地でストレスが 500-400=100 になること");
+		assertFalse(body.isFirstGround(), "firstGround フラグがクリアされること");
+	}
+
+	@Test
+	void landingNydFirstGroundSkipsStressReduction() {
+		// noDamageNextFall=true で strike(addStress) を無効化し、firstGround/NYD 条件だけを検証する
+		body.setFirstGround(true);
+		body.setStress(500);
+		body.setCoreAnkoState(CoreAnkoState.NON_YUKKURI_DISEASE);
+		body.setNoDamageNextFall(true);
+		body.setZ(1);
+		body.setMostDepth(0);
+		body.setVx(0);
+		body.setVy(0);
+		body.setVz(1);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+		body.setFalldownDamage(7);
+
+		YukkuriMovement.applyExternalMotion(body);
+
+		assertEquals(500, body.getStress(), "NYD 中は初接地でもストレス軽減が起きないこと（回帰テスト）");
+		assertFalse(body.isFirstGround(), "firstGround フラグはクリアされること");
+	}
+
+	@Test
+	void landingWithPealedKillsYukkuri() {
+		body.setPealed(true);
+		body.setZ(1);
+		body.setMostDepth(0);
+		body.setVx(0);
+		body.setVy(0);
+		body.setVz(1);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+		body.setFalldownDamage(7);
+
+		YukkuriMovement.applyExternalMotion(body);
+
+		assertTrue(body.isDead(), "皮むきゆっくりが着地ダメージで死亡すること");
+	}
+
+	@Test
+	void landingDeathSetsCrushed() {
+		body.setPealed(true);
+		body.setZ(1);
+		body.setMostDepth(0);
+		body.setVx(0);
+		body.setVy(0);
+		body.setVz(1);
+		body.setMotionX(0);
+		body.setMotionY(0);
+		body.setMotionZ(0);
+		body.setFalldownDamage(7);
+
+		YukkuriMovement.applyExternalMotion(body);
+
+		assertTrue(body.isCrushed(), "死亡着地で crushed フラグが立つこと");
+	}
+
+	private RandomSource fixedRandom(final int fixedInt, final boolean fixedBoolean) {
+		return new RandomSource() {
+			@Override
+			public int nextInt(int bound) {
+				return Math.min(fixedInt, bound - 1);
+			}
+
+			@Override
+			public boolean nextBoolean() {
+				return fixedBoolean;
+			}
+		};
+	}
+
+	private Yukkuri createMappedMoveTarget() {
+		Yukkuri target = WorldTestHelper.createBody();
+		GameWorld.get().getCurrentWorldState().getYukkuriRegistry().put(target.getUniqueId(), target);
+		return target;
+	}
+
+	private void initializeSprites(Yukkuri target) {
+		Sprite[] bodySprites = new Sprite[3];
+		Sprite[] expandSprites = new Sprite[3];
+		Sprite[] braidSprites = new Sprite[3];
+		for (int i = 0; i < bodySprites.length; i++) {
+			bodySprites[i] = new Sprite(100, 100, Sprite.PIVOT_CENTER_BOTTOM);
+			expandSprites[i] = new Sprite(100, 100, Sprite.PIVOT_CENTER_BOTTOM);
+			braidSprites[i] = new Sprite(100, 100, Sprite.PIVOT_CENTER_BOTTOM);
+		}
+		target.setSpriteSet(bodySprites);
+		target.setExpandSpr(expandSprites);
+		target.setBraidSpr(braidSprites);
+	}
+}
