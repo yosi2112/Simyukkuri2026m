@@ -1,5 +1,17 @@
 # 独自機能保持アップデート
 
+## リポジトリからの利用
+
+更新版のリポジトリは [Simyukkuri2026m](https://github.com/yosi2112/Simyukkuri2026m) です。`main` ブランチを使用します。非公開リポジトリのため、取得にはアクセス権のあるGitHubアカウントが必要です。
+
+生成JARとバックアップはGit管理の対象外です。クローン後はリポジトリのフォルダで `powershell -NoProfile -ExecutionPolicy Bypass -File build/build.ps1` を実行し、`build/SimYukkuri-makaizou.jar` を作成してください。作成後は `start_makaizou.bat` で起動します。操作方法は [README](README.md)、開発時の手順は [Build And Test](docs/build-and-test.md) をご覧ください。
+
+以下の移植・検証記録にある `plan/` と旧構成のコミットは、移植元の開発リポジトリで管理しています。本リポジトリには含まれません。記載のJARのSHA256は移植時の配布物の値です。再ビルドしたJARは生成時刻などにより別の値になる場合があります。
+
+`MAKAIZOU_FILES.sha256` はファイル照合用の一覧です。マニュアル更新分は現在の内容に合わせて更新しています。生成JARの照合行は移植時の配布物を対象とするため、クローン直後や再ビルド後の照合とは分けて確認してください。
+
+## 移植時の記録
+
 2026-10-22 JST。現行版のパッケージ構成と検証済みの告白・移動補正を基盤とし、`E:/Simyukkuri2021-main` の実行対象ソースを比較して独自機能を移植した版です。
 
 ## 起動とビルド
